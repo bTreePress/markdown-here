@@ -3,9 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "dependencies": {
-    "markdown-it": "~3.0.5",
-    "metascript": "~1.0.0",
-    "file": "*",
-    "archiver": "*"
+    "markdown-it": "^14.1.0",
+    "metascript": "^1.0.0",
+    "file": "^0.2.2",
+    "archiver": "^7.0.1"
   }
 }

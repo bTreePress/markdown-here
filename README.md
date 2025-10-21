@@ -1,4 +1,4 @@
-# ![Markdown Here logo](https://raw.github.com/adam-p/markdown-here/master/src/common/images/icon48.png) Markdown Here
+# ![Markdown Here logo](https://raw.githubusercontent.com/adam-p/markdown-here/master/src/common/images/icon48.png) Markdown Here
 
 [**Visit the website.**](http://markdown-here.com)  
 [**Get it for Chrome.**](https://chrome.google.com/webstore/detail/elifhakcjgalahccnjkneoccemfahfoa)  
@@ -17,7 +17,7 @@ To discover what can be done with Markdown in *Markdown Here*, check out the [Ma
 <sup>&dagger;: And Google Groups posts, and Blogger posts, and Evernote notes, and Wordpress posts! [See more](#compatibility).</sup>  
 <sup>&Dagger;: And TeX mathematical formulae!</sup>
 
-![screenshot of conversion](https://raw.github.com/adam-p/markdown-here/master/store-assets/markdown-here-image1.gimp.png)
+![screenshot of conversion](https://raw.githubusercontent.com/adam-p/markdown-here/master/store-assets/markdown-here-image1.gimp.png)
 
 ### Table of Contents
 **[Installation Instructions](#installation-instructions)**  
@@ -123,7 +123,7 @@ Sometimes you don't want to convert the entire email; sometimes your email isn't
 
 To revert back to Markdown, just put your cursor anywhere in the block of converted text, right click, and click the "Markdown Toggle" menu item again. Now it's magically back to the original Markdown.
 
-![screenshot of selection conversion](https://raw.github.com/adam-p/markdown-here/master/store-assets/markdown-here-image2.gimp.png)
+![screenshot of selection conversion](https://raw.githubusercontent.com/adam-p/markdown-here/master/store-assets/markdown-here-image2.gimp.png)
 
 #### Things to know about converting/reverting a selection
 
@@ -159,9 +159,9 @@ See the [Compatibility wiki page](https://github.com/adam-p/markdown-here/wiki/C
 
 ## Notes and Miscellaneous
 
-* *Markdown Here* uses [Github Flavored Markdown](http://github.github.com/github-flavored-markdown/), with the limitation that GFM special links are not supported ([issue #11](https://github.com/adam-p/markdown-here/issues/11)); nor will they be, as MDH is not Github-specific.
+* *Markdown Here* uses [Github Flavored Markdown](https://github.github.com/gfm/), with the limitation that GFM special links are not supported ([issue #11](https://github.com/adam-p/markdown-here/issues/11)); nor will they be, as MDH is not Github-specific.
 
-* Available languages for syntax highlighting (and the way they should be written in the fenced code block) can be seen on the [highlight.js demo page](http://softwaremaniacs.org/media/soft/highlight/test.html).
+* Available languages for syntax highlighting (and the way they should be written in the fenced code block) can be seen on the [highlight.js demo page](https://highlightjs.org/).
 
 * Images embedded inline in your Markdown will be retained when you "Markdown Toggle". Gmail allows you to put images inline in your email -- this can be much easier than referencing an external image.
 
@@ -252,4 +252,4 @@ Copyright 2015, [Austin Anderson](http://protractor.ninja/). Licensed to Markdow
 
 ---
 
-![Dos Equis man says](https://raw.github.com/adam-p/markdown-here/master/store-assets/dos-equis-MDH.jpg)
+![Dos Equis man says](https://raw.githubusercontent.com/adam-p/markdown-here/master/store-assets/dos-equis-MDH.jpg)

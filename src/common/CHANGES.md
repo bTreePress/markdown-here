@@ -2,6 +2,22 @@ Change Log
 ==========
 
 
+2025-10-21: v2.13.0
+--------------------
+
+* **Updated dependencies** in utils/package.json to latest versions:
+  - markdown-it: Updated from ~3.0.5 to ^14.1.0
+  - archiver: Updated from * to ^7.0.1
+  - file: Updated from * to ^0.2.2
+  - metascript: Pinned to ^1.0.0
+
+* **Documentation improvements**:
+  - Updated all raw.github.com URLs to raw.githubusercontent.com
+  - Updated GitHub Flavored Markdown reference link to current location
+  - Updated highlight.js demo page link to current website
+  - Fixed various outdated external links
+
+
 2015-09-07: v2.12.0
 --------------------
 
