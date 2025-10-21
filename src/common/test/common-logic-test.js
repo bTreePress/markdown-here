@@ -1,6 +1,6 @@
 /*
  * Copyright Adam Pritchard 2013
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 "use strict";
@@ -12,20 +12,6 @@
 describe('CommonLogic', function() {
   it('should exist', function() {
     expect(CommonLogic).to.exist;
-  });
-
-  describe('getUpgradeNotification', function() {
-    it('should get the upgrade notification', function(done) {
-      var KNOWN_CONTENT = 'id="markdown-here-upgrade-notification-content"';
-      var TEST_OPTIONS_URL = 'my-test-options-url';
-      var callback = function(data) {
-        expect(data.indexOf(KNOWN_CONTENT)).to.be.greaterThan(-1);
-        expect(data.indexOf(TEST_OPTIONS_URL)).to.be.greaterThan(-1);
-        done();
-      };
-
-      CommonLogic.getUpgradeNotification(TEST_OPTIONS_URL, callback);
-    });
   });
 
   describe('getForgotToRenderPromptContent', function() {

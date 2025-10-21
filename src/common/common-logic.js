@@ -1,6 +1,6 @@
 /*
  * Copyright Adam Pritchard 2013
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 /*
@@ -31,34 +31,6 @@ function debugLog() {
 
 
 /*
- * Gets the upgrade notification. This must be called from a privileged script.
- */
-function getUpgradeNotification(optionsURL, responseCallback) {
-  debugLog('getUpgradeNotification', 'getting');
-
-  Utils.getLocalFile(
-    Utils.getLocalURL('/common/upgrade-notification.html'),
-    'text/html',
-    function(html) {
-      // Get the logo image data
-      Utils.getLocalFileAsBase64(
-        Utils.getLocalURL('/common/images/icon32.png'),
-        function(logoBase64) {
-          // Do some rough template replacement
-          html = html.replace('{{optionsURL}}', optionsURL)
-                     .replace('{{logoBase64}}', logoBase64)
-                     .replace('{{upgrade_notification_changes_tooltip}}', Utils.getMessage('upgrade_notification_changes_tooltip'))
-                     .replace('{{upgrade_notification_text}}', Utils.getMessage('upgrade_notification_text'))
-                     .replace('{{upgrade_notification_dismiss_tooltip}}', Utils.getMessage('upgrade_notification_dismiss_tooltip'));
-
-          debugLog('getUpgradeNotification', 'got');
-          return responseCallback(html);
-        });
-      });
-}
-
-
-/*
  ******************************************************************************
  Forgot-to-render check
  ******************************************************************************
@@ -72,7 +44,7 @@ function getForgotToRenderPromptContent(responseCallback) {
 
   Utils.getLocalFile(
     Utils.getLocalURL('/common/forgot-to-render-prompt.html'),
-    'text/html',
+    'text',
     function(html) {
       html = html.replace('{{forgot_to_render_prompt_title}}', Utils.getMessage('forgot_to_render_prompt_title'))
                  .replace('{{forgot_to_render_prompt_info}}', Utils.getMessage('forgot_to_render_prompt_info'))
@@ -82,8 +54,9 @@ function getForgotToRenderPromptContent(responseCallback) {
                  .replace('{{forgot_to_render_send_button}}', Utils.getMessage('forgot_to_render_send_button'));
 
       // Get the logo image data
-      Utils.getLocalFileAsBase64(
+      Utils.getLocalFile(
         Utils.getLocalURL('/common/images/icon48.png'),
+        'base64',
         function(logoBase64) {
           // Do some rough template replacement
           html = html.replace('{{logoBase64}}', logoBase64);
@@ -110,7 +83,7 @@ This has two annoying effects for us:
 away, our message box's focused button might get immediately `click`ed.
 
 2. If the user hits `space` to dismiss our message box, any button underneath
-(such as on Gmail's "Please specificy at least one recipient" box) might get
+(such as on Gmail's "Please specify at least one recipient" box) might get
 clicked.
 */
 
@@ -126,10 +99,10 @@ var WATCHED_PROPERTY = 'markdownHereForgotToRenderWatched';
 // Returns null if forgot-to-render should not be used here.
 function getForgotToRenderButtonSelector(elem) {
   if (elem.ownerDocument.location.host.indexOf('mail.google.') >= 0) {
-    return '[role="button"][tabindex="1"]';
+    return '[role="button"][tabindex="1"][aria-label][data-tooltip]';
   }
-  else if (elem.ownerDocument.location.host.indexOf('inbox.google.') >= 0) {
-    return '[role="button"][tabindex="0"][jsaction$=".send"]';
+  else if (elem.ownerDocument.location.host.indexOf('fastmail.') >= 0) {
+    return '[class~="s-send"]';
   }
 
   return null;
@@ -139,7 +112,7 @@ function getForgotToRenderButtonSelector(elem) {
 // This function encapsulates the logic required to prevent accidental sending
 // of email that the user wrote in Markdown but forgot to render.
 function forgotToRenderIntervalCheck(focusedElem, MarkdownHere, MdhHtmlToText, marked, prefs) {
-  if (!prefs['forgot-to-render-check-enabled']) {
+  if (!prefs['forgot-to-render-check-enabled-2']) {
     debugLog('forgotToRenderIntervalCheck', 'pref disabled');
     return;
   }
@@ -433,36 +406,16 @@ function showForgotToRenderPromptAndRespond(composeElem, composeSendButton) {
     }
   };
 
-  // Decide which prompt style to use.
-  if (typeof(composeElem.ownerDocument.defaultView.openDialog) !== 'undefined') {
-    var promptParams = {
-      inn:{
-        promptInfo: Utils.getMessage('forgot_to_render_prompt_info'),
-        promptQuestion: Utils.getMessage('forgot_to_render_prompt_question'),
-        promptBackButton: Utils.getMessage('forgot_to_render_back_button'),
-        promptSendButton: Utils.getMessage('forgot_to_render_send_button') },
-      out:null
-    };
-    composeElem.ownerDocument.defaultView.openDialog(
-      "chrome://markdown_here/content/confirm-prompt.xul",
-      "",
-      "chrome, dialog, modal, centerscreen",
-      promptParams).focus();
-
-    sendOrGoBackToCompose(promptParams.out);
-  }
-  else {
-    Utils.makeRequestToPrivilegedScript(
-      composeElem.ownerDocument,
-      { action: 'get-forgot-to-render-prompt'},
-      function(response) {
-        showHTMLForgotToRenderPrompt(
-          response.html,
-          composeElem,
-          composeSendButton,
-          sendOrGoBackToCompose);
-      });
-  }
+  Utils.makeRequestToPrivilegedScript(
+    composeElem.ownerDocument,
+    { action: 'get-forgot-to-render-prompt'},
+    function(response) {
+      showHTMLForgotToRenderPrompt(
+        response.html,
+        composeElem,
+        composeSendButton,
+        sendOrGoBackToCompose);
+    });
 }
 
 
@@ -474,7 +427,7 @@ function showHTMLForgotToRenderPrompt(html, composeElem, composeSendButton, call
 
   elem = composeSendButton.ownerDocument.createElement('div');
   composeSendButton.ownerDocument.body.appendChild(elem);
-  Utils.saferSetOuterHTML(elem, html);
+  Utils.saferSetOuterHTML(elem, html, true); // allow style tags
 
   // Note that `elem` is no longer valid after we call Utils.saferSetOuterHTML on it.
 
@@ -589,7 +542,6 @@ function showHTMLForgotToRenderPrompt(html, composeElem, composeSendButton, call
 
 // Expose these functions
 var CommonLogic = {};
-CommonLogic.getUpgradeNotification = getUpgradeNotification;
 CommonLogic.getForgotToRenderPromptContent = getForgotToRenderPromptContent;
 CommonLogic.forgotToRenderIntervalCheck = forgotToRenderIntervalCheck;
 CommonLogic.probablyWritingMarkdown = probablyWritingMarkdown;

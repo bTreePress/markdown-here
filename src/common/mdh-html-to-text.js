@@ -1,6 +1,6 @@
 /*
  * Copyright Adam Pritchard 2015
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 /*
@@ -14,17 +14,6 @@ This module encapsulates Markdown Here's HTML-to-plaintext functionality.
 /*global module:false, htmlToText:false, Utils:false*/
 
 var exports = {};
-
-
-if (typeof(htmlToText) === 'undefined' &&
-    typeof(Components) !== 'undefined' &&
-    typeof(Components.utils) !== 'undefined') {
-  var scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-                               .getService(Components.interfaces.mozIJSSubScriptLoader);
-  scriptLoader.loadSubScript('resource://markdown_here_common/jsHtmlToText.js');
-  scriptLoader.loadSubScript('resource://markdown_here_common/utils.js');
-}
-
 
 /*
 NOTE: Maybe it would be better to process the DOM directly? String-processing
@@ -334,7 +323,7 @@ function convertHTMLtoMarkdown(tag, html) {
     /*
     Make sure we do *not* convert HTML links that are inside of MD links.
     Otherwise we'll have problems like issue #69.
-    We're going to use a regex that mimics a negative lookbehind. For details see: http://blog.stevenlevithan.com/archives/mimic-lookbehind-javascript
+    We're going to use a regex that mimics a negative lookbehind. For details see: https://blog.stevenlevithan.com/archives/mimic-lookbehind-javascript
     Here's an attempt at an explanation of the regex:
       (                 // begin optional prefix capture group
         (?:\]\([^\)]*)  // match an unclosed URL portion of a MD link -- like "...](..."

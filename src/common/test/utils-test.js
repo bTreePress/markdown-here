@@ -1,20 +1,20 @@
 /*
  * Copyright Adam Pritchard 2014
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 "use strict";
 /* jshint curly:true, noempty:true, newcap:true, eqeqeq:true, eqnull:true, es5:true, undef:true, devel:true, browser:true, node:true, evil:false, latedef:false, nonew:true, trailing:false, immed:false, smarttabs:true, expr:true */
 /* global describe, expect, it, before, beforeEach, after, afterEach */
-/* global _, $, markdownRender, htmlToText, marked, hljs, Utils */
+/* global _, markdownRender, htmlToText, marked, hljs, Utils */
 
 
 // This function wraps `htmlString` in a `<div>` to make life easier for us.
 // It should affect the testing behaviour, though -- good/bad elements in a
 // `<div>` are still good/bad.
 function createDocFrag(htmlString) {
-  var docFrag = document.createDocumentFragment();
-  var elem = document.createElement('div');
+  const docFrag = document.createDocumentFragment();
+  const elem = document.createElement('div');
   elem.innerHTML = htmlString;
   docFrag.appendChild(elem);
   return docFrag;
@@ -24,44 +24,6 @@ function createDocFrag(htmlString) {
 describe('Utils', function() {
   it('should exist', function() {
     expect(Utils).to.exist;
-  });
-
-  describe('sanitizeDocumentFragment', function() {
-    it('should not alter safe doc-frags', function() {
-      var origFrag = createDocFrag('<div>hi');
-      var sanFrag = Utils.sanitizeDocumentFragment(origFrag);
-      expect(origFrag.isEqualNode(sanFrag)).to.be.true;
-    });
-
-    it('should remove <script> elements', function() {
-      var origFrag = createDocFrag('<b>hi</b><script>alert("oops")</script>there<script>alert("derp")</script>');
-      var sanFrag = Utils.sanitizeDocumentFragment(origFrag);
-      expect(origFrag.isEqualNode(sanFrag)).to.be.false;
-
-      var cleanFrag = createDocFrag('<b>hi</b>there');
-      expect(cleanFrag.isEqualNode(sanFrag)).to.be.true;
-    });
-
-    it('should not remove safe attributes', function() {
-      var origFrag = createDocFrag('<div id="rad" style="color:red">hi</div>');
-      // Make sure the attributes are sticking in the original
-      expect(origFrag.querySelector('#rad').style.color).to.equal('red');
-
-      var sanFrag = Utils.sanitizeDocumentFragment(origFrag);
-      expect(origFrag.isEqualNode(sanFrag)).to.be.true;
-    });
-
-    it('should remove event handler attributes', function() {
-      var origFrag = createDocFrag('<div id="rad" style="color:red" onclick="javascript:alert(\'derp\')">hi</div>');
-      // Make sure the attributes are sticking in the original
-      expect(origFrag.querySelector('#rad').attributes.onclick).to.exist;
-
-      var sanFrag = Utils.sanitizeDocumentFragment(origFrag);
-      expect(origFrag.isEqualNode(sanFrag)).to.be.false;
-
-      var cleanFrag = createDocFrag('<div id="rad" style="color:red">hi</div>');
-      expect(cleanFrag.isEqualNode(sanFrag)).to.be.true;
-    });
   });
 
   describe('saferSetInnerHTML', function() {
@@ -120,60 +82,95 @@ describe('Utils', function() {
   describe('saferSetOuterHTML', function() {
     beforeEach(function() {
       // Our test container element, which will not be modified
-      $('body').append($('<div id="test-container" style="display:none"><div id="test-elem"></div></div>'));
+      const container = document.createElement('div');
+      container.id = 'test-container';
+      container.style.display = 'none';
+      container.innerHTML = '<div id="test-elem"></div>';
+      document.body.appendChild(container);
     });
 
     afterEach(function() {
-      $('#test-container').remove();
+      const container = document.getElementById('test-container');
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
     });
 
     it('should throw exception if element not in DOM', function() {
-      var testElem = $('<div><b>bye</b></div>').get(0);
+      const testElem = document.createElement('div');
+      testElem.innerHTML = '<b>bye</b>';
 
-      var fn = _.partial(Utils.saferSetOuterHTML, '<p></p>');
+      const fn = _.partial(Utils.saferSetOuterHTML, '<p></p>');
 
       expect(fn).to.throw(Error);
     });
 
     it('should set safe HTML without alteration', function() {
-      Utils.saferSetOuterHTML($('#test-container').children(':first').get(0), '<p>hi</p>');
+      const container = document.getElementById('test-container');
+      Utils.saferSetOuterHTML(container.firstElementChild, '<p>hi</p>');
 
-      expect($('#test-container').html()).to.equal('<p>hi</p>');
+      expect(container.innerHTML).to.equal('<p>hi</p>');
     });
 
     it('should remove <script> elements', function() {
-      Utils.saferSetOuterHTML($('#test-container').children(':first').get(0), '<b>hi</b><script>alert("oops")</script>there<script>alert("derp")</script>');
+      const container = document.getElementById('test-container');
+      Utils.saferSetOuterHTML(container.firstElementChild, '<b>hi</b><script>alert("oops")</script>there<script>alert("derp")</script>');
 
-      expect($('#test-container').html()).to.equal('<b>hi</b>there');
+      expect(container.innerHTML).to.equal('<b>hi</b>there');
     });
 
     it('should not remove safe attributes', function() {
-      Utils.saferSetOuterHTML($('#test-container').children(':first').get(0), '<div id="rad" style="color:red">hi</div>');
+      const container = document.getElementById('test-container');
+      Utils.saferSetOuterHTML(container.firstElementChild, '<div id="rad" style="color:red">hi</div>');
 
-      expect($('#test-container').html()).to.equal('<div id="rad" style="color:red">hi</div>');
+      expect(container.innerHTML).to.equal('<div id="rad" style="color:red">hi</div>');
     });
 
     it('should remove event handler attributes', function() {
-      Utils.saferSetOuterHTML($('#test-container').children(':first').get(0), '<div id="rad" style="color:red" onclick="javascript:alert(\'derp\')">hi</div>');
+      const container = document.getElementById('test-container');
+      Utils.saferSetOuterHTML(container.firstElementChild, '<div id="rad" style="color:red" onclick="javascript:alert(\'derp\')">hi</div>');
 
-      expect($('#test-container').html()).to.equal('<div id="rad" style="color:red">hi</div>');
+      expect(container.innerHTML).to.equal('<div id="rad" style="color:red">hi</div>');
+    });
+
+    // An earlier implementation of Utils.saferSetOuterHTML was vulnerable to allowing
+    // script execution through the on error and onload handlers of an image element.
+    // Unfortunately, on the test page this manifested as a CSP error, so this test never
+    // actually failed, even when the vulnerability was present. This test is a reminder
+    // of that vulnerability, and there should not be any console CSP errors when it is run.
+    it('should not execute img onerror handlers', function() {
+      // Another test showing script execution through different vectors
+      window.imgErrorExecuted = false;
+
+      var maliciousHTML = '<div>before</div><img src="nonexistent.jpg" onerror="window.imgErrorExecuted = true;"><div>after</div>';
+
+      const container = document.getElementById('test-container');
+      Utils.saferSetOuterHTML(container.firstElementChild, maliciousHTML);
+
+      // The onerror handler should NOT have executed
+      expect(window.imgErrorExecuted).to.be.false;
+
+      // Clean up
+      delete window.imgErrorExecuted;
     });
   });
 
 
   describe('getDocumentFragmentHTML', function() {
-    var makeFragment = function(htmlArray) {
-      var docFrag = document.createDocumentFragment();
+    const makeFragment = function(htmlArray) {
+      const docFrag = document.createDocumentFragment();
       htmlArray.forEach(function(html) {
-        docFrag.appendChild($(html).get(0));
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        docFrag.appendChild(template.content.firstElementChild);
       });
 
       return docFrag;
     };
 
-    var makeTextFragment = function(text) {
-      var docFrag = document.createDocumentFragment();
-      var textNode = document.createTextNode(text);
+    const makeTextFragment = function(text) {
+      const docFrag = document.createDocumentFragment();
+      const textNode = document.createTextNode(text);
       docFrag.appendChild(textNode);
       return docFrag;
     };
@@ -205,17 +202,20 @@ describe('Utils', function() {
 
 
   describe('isElementDescendant', function() {
-    var $testOuter;
+    let testOuter;
 
     before(function() {
-      $testOuter = $('<div id="isElementDescendant-0"></div>')
-        .appendTo('body')
-        .append('<div id="isElementDescendant-1"><div id="isElementDescendant-1-1"></div></div>')
-        .append('<div id="isElementDescendant-2"><div id="isElementDescendant-2-1"></div></div>');
+      testOuter = document.createElement('div');
+      testOuter.id = 'isElementDescendant-0';
+      testOuter.innerHTML = '<div id="isElementDescendant-1"><div id="isElementDescendant-1-1"></div></div>' +
+                            '<div id="isElementDescendant-2"><div id="isElementDescendant-2-1"></div></div>';
+      document.body.appendChild(testOuter);
     });
 
     after(function() {
-      $testOuter.remove();
+      if (testOuter && testOuter.parentNode) {
+        testOuter.parentNode.removeChild(testOuter);
+      }
     });
 
     it('should correctly detect descendency', function() {
@@ -245,38 +245,27 @@ describe('Utils', function() {
 
 
   describe('getLocalFile', function() {
-    it('should return correct data', function(done) {
-      // We "know" our logo file starts with this string when base64'd
+    it('should return correct text data', function(done) {
       var KNOWN_PREFIX = '<!DOCTYPE html>';
       var callback = function(data) {
         expect(data.slice(0, KNOWN_PREFIX.length)).to.equal(KNOWN_PREFIX);
         done();
       };
 
-      Utils.getLocalFile('../options.html', 'text/html', callback);
+      Utils.getLocalFile('../options.html', 'text', callback);
     });
 
-    it('should correctly handle absence of optional argument', function(done) {
-      // We "know" our options.html file starts with this string
-      var KNOWN_PREFIX = '<!DOCTYPE html>';
+    it('should return correct json data', function(done) {
       var callback = function(data) {
-        expect(data.slice(0, KNOWN_PREFIX.length)).to.equal(KNOWN_PREFIX);
+        expect(data).to.be.an('object');
+        expect(data).to.have.property('app_name');
         done();
       };
 
-      Utils.getLocalFile('../options.html', callback);
+      Utils.getLocalFile('/_locales/en/messages.json', 'json', callback);
     });
 
-    it('should supply an error arg to callback if file not found', function(done) {
-      Utils.getLocalFile('badfilename', function(val, err) {
-        expect(err).to.be.ok;
-        done();
-      });
-    });
-  });
-
-  describe('getLocalFileAsBase64', function() {
-    it('should return data as Base64', function(done) {
+    it('should return correct base64 data', function(done) {
       // We "know" our logo file starts with this string when base64'd
       var KNOWN_PREFIX = 'iVBORw0KGgo';
       var callback = function(data) {
@@ -284,15 +273,38 @@ describe('Utils', function() {
         done();
       };
 
-      Utils.getLocalFileAsBase64('../images/icon16.png', callback);
+      Utils.getLocalFile('../images/icon16.png', 'base64', callback);
     });
 
+    it('should work with getLocalURL', function(done) {
+      var KNOWN_PREFIX = '<!DOCTYPE html>';
+      var callback = function(data) {
+        expect(data.slice(0, KNOWN_PREFIX.length)).to.equal(KNOWN_PREFIX);
+        done();
+      };
+
+      Utils.getLocalFile(Utils.getLocalURL('/common/options.html'), 'text', callback);
+    });
+
+    /* If we switch to promises rather than asynchronous callbacks, we can use these tests again.
     it('should supply an error arg to callback if file not found', function(done) {
-      Utils.getLocalFile('badfilename', function(val, err) {
+      try {
+        Utils.getLocalFile('badfilename', 'text', function(val, err) {
+        });
+      }
+      catch (e) {
+        done();
+      }
+    });
+
+    it('should supply an error arg to callback if dataType is bad', function(done) {
+      Utils.getLocalFile('../options.html', 'nope', function(val, err) {
         expect(err).to.be.ok;
+        expect(val).to.not.be.ok;
         done();
       });
     });
+    */
   });
 
   describe('getLocalURL', function() {
@@ -309,7 +321,7 @@ describe('Utils', function() {
       };
 
       var url = Utils.getLocalURL('/common/options.html');
-      Utils.getLocalFile(url, 'text/html', callback);
+      Utils.getLocalFile(url, 'text', callback);
     });
   });
 
@@ -341,25 +353,28 @@ describe('Utils', function() {
 
   describe('setFocus', function() {
     it('should set focus into a contenteditable div', function() {
-      var $div = $('<div contenteditable="true">').appendTo('body');
-      expect(document.activeElement).to.not.equal($div.get(0));
+      const div = document.createElement('div');
+      div.contentEditable = 'true';
+      document.body.appendChild(div);
+      expect(document.activeElement).to.not.equal(div);
 
-      Utils.setFocus($div.get(0));
-      expect(document.activeElement).to.equal($div.get(0));
+      Utils.setFocus(div);
+      expect(document.activeElement).to.equal(div);
 
-      $div.remove();
+      div.parentNode.removeChild(div);
     });
 
     it('should set focus into an iframe with contenteditable body', function() {
-      var $iframe = $('<iframe>').appendTo('body');
-      $iframe.get(0).contentDocument.body.contentEditable = true;
-      expect(document.activeElement).to.not.equal($iframe.get(0));
+      const iframe = document.createElement('iframe');
+      document.body.appendChild(iframe);
+      iframe.contentDocument.body.contentEditable = true;
+      expect(document.activeElement).to.not.equal(iframe);
 
-      Utils.setFocus($iframe.get(0).contentDocument.body);
-      expect(document.activeElement).to.equal($iframe.get(0));
-      expect($iframe.get(0).contentDocument.activeElement).to.equal($iframe.get(0).contentDocument.body);
+      Utils.setFocus(iframe.contentDocument.body);
+      expect(document.activeElement).to.equal(iframe);
+      expect(iframe.contentDocument.activeElement).to.equal(iframe.contentDocument.body);
 
-      $iframe.remove();
+      iframe.parentNode.removeChild(iframe);
     });
   });
 
@@ -375,9 +390,10 @@ describe('Utils', function() {
     });
 
     it('should get the URL from an iframe', function() {
-      var $iframe = $('<iframe>').appendTo('body');
-      expect(Utils.getTopURL($iframe.get(0).contentWindow)).to.equal(location.href);
-      $iframe.remove();
+      const iframe = document.createElement('iframe');
+      document.body.appendChild(iframe);
+      expect(Utils.getTopURL(iframe.contentWindow)).to.equal(location.href);
+      iframe.parentNode.removeChild(iframe);
     });
 
     it('should get the hostname', function() {
@@ -448,55 +464,48 @@ describe('Utils', function() {
     });
   });
 
-  describe('registerStringBundleLoadListener', function() {
-    it('should get called eventually', function(done) {
-      Utils.registerStringBundleLoadListener(done);
+  describe('semverGreaterThan', function() {
+    it('should correctly order version strings', function() {
+      // Since the exact string retuned depends on the current browser locale,
+      // we'll just check that some string is returned.
+      expect(Utils.semverGreaterThan('1.11.1', '1.2.2')).to.be.true;
+      expect(Utils.semverGreaterThan('11.1.1', '2.2.2')).to.be.true;
+      expect(Utils.semverGreaterThan('11.1.1', '11.1.0')).to.be.true;
+      expect(Utils.semverGreaterThan('9.0.0', '10.0.0')).to.be.false;
+      expect(Utils.semverGreaterThan('9.0.2', '9.0.100')).to.be.false;
+      expect(Utils.semverGreaterThan('0.99', '1.0')).to.be.false;
     });
-  });
 
-  describe('getMoz/SafariStringBundle', function() {
-    it('should get the string bundle', function(done) {
-      if (typeof(chrome) !== 'undefined') {
-        // not applicable
-        done();
-        return;
-      }
-      else if (typeof(safari) !== 'undefined') {
-        Utils.getSafariStringBundle(function(data, err) {
-          expect(err).to.not.be.ok;
-          expect(data).to.be.an('object');
-          done();
-        });
-      }
-      else { // Mozilla
-        var data = Utils.getMozStringBundle();
-        if (data) {
-          expect(data).to.be.an('object');
-          done();
-        }
-        else {
-          // HACK: make a call to the privileged script
-          Utils.makeRequestToPrivilegedScript(document, {action: 'get-string-bundle'}, function(response) {
-            expect(response).to.be.an('object');
-            done();
-          });
-        }
-      }
+    it('should cope with non-semver input', function() {
+      expect(Utils.semverGreaterThan('nope', '1.0')).to.be.true.and.to.not.throw;
+      expect(Utils.semverGreaterThan('1.0', 'nope')).to.be.false.and.to.not.throw;
+    });
+
+    it('should return false on falsy input', function() {
+      expect(Utils.semverGreaterThan(null, '1.0')).to.be.false;
+      expect(Utils.semverGreaterThan('1.0', null)).to.be.false;
     });
   });
 
   describe('walkDOM', function() {
     beforeEach(function() {
-      $('body').append($('<div id="test-container" style="display:none"><div id="test-elem"></div></div>'));
+      const container = document.createElement('div');
+      container.id = 'test-container';
+      container.style.display = 'none';
+      container.innerHTML = '<div id="test-elem"></div>';
+      document.body.appendChild(container);
     });
 
     afterEach(function() {
-      $('#test-container').remove();
+      const container = document.getElementById('test-container');
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
     });
 
     it('should find an element in the DOM', function() {
-      var found = false;
-      Utils.walkDOM($('body')[0], function(node) {
+      let found = false;
+      Utils.walkDOM(document.body, function(node) {
         found = found || node.id === 'test-elem';
       });
       expect(found).to.be.true;
@@ -521,38 +530,52 @@ describe('Utils', function() {
 
   describe('rangeIntersectsNode', function() {
     beforeEach(function() {
-      $('body').append($('<div id="test-container" style="display:none"><div id="test-elem-1"></div><div id="test-elem-2"></div></div>'));
+      const container = document.createElement('div');
+      container.id = 'test-container';
+      container.style.display = 'none';
+      container.innerHTML = '<div id="test-elem-1"></div><div id="test-elem-2"></div>';
+      document.body.appendChild(container);
     });
 
     afterEach(function() {
-      $('#test-container').remove();
+      const container = document.getElementById('test-container');
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
     });
 
     it('should detect a node in a range', function() {
-      var range = document.createRange();
-      range.selectNode($('#test-container')[0]);
+      const range = document.createRange();
+      const container = document.getElementById('test-container');
+      range.selectNode(container);
 
       // Check the node that is selected.
-      expect(Utils.rangeIntersectsNode(range, $('#test-container')[0])).to.be.true;
+      expect(Utils.rangeIntersectsNode(range, container)).to.be.true;
 
       // Check a node that is within the node that is selected.
-      expect(Utils.rangeIntersectsNode(range, $('#test-elem-2')[0])).to.be.true;
+      expect(Utils.rangeIntersectsNode(range, document.getElementById('test-elem-2'))).to.be.true;
     });
 
     it('should not detect a node not in a range', function() {
-      var range = document.createRange();
-      range.selectNode($('#test-elem-1')[0]);
+      const range = document.createRange();
+      range.selectNode(document.getElementById('test-elem-1'));
 
       // The parent of the selected node *is* intersected.
-      expect(Utils.rangeIntersectsNode(range, $('#test-container')[0])).to.be.true;
+      expect(Utils.rangeIntersectsNode(range, document.getElementById('test-container'))).to.be.true;
 
       // The sibling of the selected node *is not* intersected.
-      expect(Utils.rangeIntersectsNode(range, $('#test-elem-2')[0])).to.be.false;
+      expect(Utils.rangeIntersectsNode(range, document.getElementById('test-elem-2'))).to.be.false;
+    });
 
-      // I have found that Range.intersectsNode is broken on Chrome. I'm adding
-      // test to see if/when it gets fixed.
-      if (typeof(window.chrome) !== 'undefined') {
-        expect(range.intersectsNode($('#test-elem-2')[0])).to.be.true;
+    // I have found that Range.intersectsNode is broken on Chrome. I'm adding
+    // test to see if/when it gets fixed.
+    // TODO: This test seems flawed. Why would test-elem-2 intersect the range that just contains test-elem-1? Hand-testing suggests that this is working as expected in Chrome and Firefox. Code that works around this probably-nonexistent bug should be reconsidered (especially since Postbox support is dropped).
+    it('Range.intersectsNode is broken on Chrome', function() {
+      const range = document.createRange();
+      range.selectNode(document.getElementById('test-elem-1'));
+
+      if (typeof(window.chrome) !== 'undefined' && navigator.userAgent.indexOf('Chrome') >= 0) {
+        expect(range.intersectsNode(document.getElementById('test-elem-2'))).to.be.true;
       }
     });
   });

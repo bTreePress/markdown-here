@@ -1,6 +1,6 @@
 /*
  * Copyright Adam Pritchard 2015
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 
@@ -9,23 +9,18 @@
 "use strict";
 /*global module:false, chrome:false, Components:false*/
 
-if (typeof(Utils) === 'undefined' && typeof(Components) !== 'undefined') {
-  var scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-                               .getService(Components.interfaces.mozIJSSubScriptLoader);
-  scriptLoader.loadSubScript('resource://markdown_here_common/utils.js');
-}
-
 // Common defaults
-var DEFAULTS = {
-  'math-enabled': true,
-  'math-value': '<img src="https://chart.googleapis.com/chart?cht=tx&chl={urlmathcode}" alt="{mathcode}">',
-  'hotkey': { shiftKey: false, ctrlKey: true, altKey: true, key: 'M' },
-  'forgot-to-render-check-enabled': false,
+const DEFAULTS = {
+  'math-enabled': false,
+  'math-value': '<img src="https://latex.codecogs.com/png.image?\\dpi{120}\\inline&space;{urlmathcode}" alt="{mathcode}">',
+  // When we switched to the new permissions model, we needed users to re-enable the
+  // forgot-to-render check, so that they would be prompted to give permission to access
+  // mail.google.com. So the name of this option changed to force that.
+  'forgot-to-render-check-enabled-2': false,
   'header-anchors-enabled': false,
   'gfm-line-breaks-enabled': true
 };
 
-/*? if(platform!=='mozilla'){ */
 /*
  * Chrome storage helper. Gets around the synchronized value size limit.
  * Overall quota limits still apply (or less, but we should stay well within).
@@ -49,6 +44,7 @@ var DEFAULTS = {
 // TODO: Check for errors. See: https://code.google.com/chrome/extensions/dev/storage.html
 
 var ChromeOptionsStore = {
+
 
   // The options object will be passed to `callback`
   get: function(callback) {
@@ -122,12 +118,11 @@ var ChromeOptionsStore = {
 
   // The default values or URLs for our various options.
   defaults: {
-    'main-css': {'__defaultFromFile__': '/common/default.css', '__mimeType__': 'text/css'},
-    'syntax-css': {'__defaultFromFile__': '/common/highlightjs/styles/github.css', '__mimeType__': 'text/css'},
+    'main-css': {'__defaultFromFile__': '/common/default.css', '__dataType__': 'text'},
+    'syntax-css': {'__defaultFromFile__': '/common/highlightjs/styles/github.css', '__dataType__': 'text'},
     'math-enabled': DEFAULTS['math-enabled'],
     'math-value': DEFAULTS['math-value'],
-    'hotkey': DEFAULTS['hotkey'],
-    'forgot-to-render-check-enabled': DEFAULTS['forgot-to-render-check-enabled'],
+    'forgot-to-render-check-enabled-2': DEFAULTS['forgot-to-render-check-enabled-2'],
     'header-anchors-enabled': DEFAULTS['header-anchors-enabled'],
     'gfm-line-breaks-enabled': DEFAULTS['gfm-line-breaks-enabled']
   },
@@ -140,20 +135,20 @@ var ChromeOptionsStore = {
   _maxlen: function() {
     // Note that chrome.storage.sync.QUOTA_BYTES_PER_ITEM is in bytes, but JavaScript
     // strings are UTF-16, so we need to divide by 2.
-    // Some JS string info: http://rosettacode.org/wiki/String_length#JavaScript
-    if (chrome.storage) {
+    // Some JS string info: https://rosettacode.org/wiki/String_length#JavaScript
+    if (chrome.storage && chrome.storage.sync && chrome.storage.sync.QUOTA_BYTES_PER_ITEM) {
       return chrome.storage.sync.QUOTA_BYTES_PER_ITEM / 2;
     }
     else {
-      // 2048 is the default value for chrome.storage.sync.QUOTA_BYTES_PER_ITEM, so...
-      return 2048 / 2;
+      // 8192 is the default value for chrome.storage.sync.QUOTA_BYTES_PER_ITEM, so...
+      return 8192 / 2;
     }
 
   },
 
   _storageGet: function(callback) {
     if (chrome.storage) {
-      chrome.storage.sync.get(null, function(obj) {
+      (chrome.storage.sync || chrome.storage.local).get(null, function(obj) {
         var key;
         for (key in obj) {
           // Older settings aren't JSON-encoded, so they'll throw an exception.
@@ -194,7 +189,7 @@ var ChromeOptionsStore = {
     }
 
     if (chrome.storage) {
-      chrome.storage.sync.set(finalobj, callback);
+      (chrome.storage.sync || chrome.storage.local).set(finalobj, callback);
       return;
     }
     else {
@@ -212,7 +207,7 @@ var ChromeOptionsStore = {
 
   _storageRemove: function(keysToDelete, callback) {
     if (chrome.storage) {
-      chrome.storage.sync.remove(keysToDelete, callback);
+      (chrome.storage.sync || chrome.storage.local).remove(keysToDelete, callback);
       return;
     }
     else {
@@ -259,247 +254,21 @@ var ChromeOptionsStore = {
     });
   }
 };
-/*? } */
 
 
-/*
- * Mozilla preferences storage helper
- */
-
-var MozillaOptionsStore = {
-
-  get: function(callback) {
-    var that = this;
-    this._sendRequest({verb: 'get'}, function(prefsObj) {
-      that._fillDefaults(prefsObj, callback);
-    });
-  },
-
-  set: function(obj, callback) {
-    this._sendRequest({verb: 'set', obj: obj}, callback);
-  },
-
-  remove: function(arrayOfKeys, callback) {
-    this._sendRequest({verb: 'clear', obj: arrayOfKeys}, callback);
-  },
-
-  // The default values or URLs for our various options.
-  defaults: {
-    'local-first-run': true,
-    'main-css': {'__defaultFromFile__': 'resource://markdown_here_common/default.css', '__mimeType__': 'text/css'},
-    'syntax-css': {'__defaultFromFile__': 'resource://markdown_here_common/highlightjs/styles/github.css', '__mimeType__': 'text/css'},
-    'math-enabled': DEFAULTS['math-enabled'],
-    'math-value': DEFAULTS['math-value'],
-    'hotkey': DEFAULTS['hotkey'],
-    'forgot-to-render-check-enabled': DEFAULTS['forgot-to-render-check-enabled'],
-    'header-anchors-enabled': DEFAULTS['header-anchors-enabled'],
-    'gfm-line-breaks-enabled': DEFAULTS['gfm-line-breaks-enabled']
-  },
-
-  // This is called both from content and background scripts, and we need vastly
-  // different code in those cases. When calling from a content script, we need
-  // to make a request to a background service (found in firefox/chrome/content/background-services.js).
-  // When called from a background script, we're going to access the browser prefs
-  // directly. Unfortunately, this means duplicating some code from the background
-  // service.
-  _sendRequest: function(data, callback) { // analogue of chrome.extension.sendMessage
-    var extPrefsBranch, supportString, prefKeys, prefsObj, request, sender, i;
-
-    try {
-      extPrefsBranch = window.Components.classes['@mozilla.org/preferences-service;1']
-                             .getService(Components.interfaces.nsIPrefService)
-                             .getBranch('extensions.markdown-here.');
-      supportString = Components.classes["@mozilla.org/supports-string;1"]
-                                .createInstance(Components.interfaces.nsISupportsString);
-
-      if (data.verb === 'get') {
-        prefKeys = extPrefsBranch.getChildList('');
-        prefsObj = {};
-
-        for (i = 0; i < prefKeys.length; i++) {
-          // All of our legitimate prefs should be strings, but issue #237 suggests
-          // that things may sometimes get into a bad state. We will check and delete
-          // and prefs that aren't strings.
-          // https://github.com/adam-p/markdown-here/issues/237
-          if (extPrefsBranch.getPrefType(prefKeys[i]) !== extPrefsBranch.PREF_STRING) {
-            extPrefsBranch.clearUserPref(prefKeys[i]);
-            continue;
-          }
-
-          try {
-            prefsObj[prefKeys[i]] = window.JSON.parse(
-                                      extPrefsBranch.getComplexValue(
-                                        prefKeys[i],
-                                        Components.interfaces.nsISupportsString).data);
-          }
-          catch(e) {
-            // Null values and empty strings will result in JSON exceptions
-            prefsObj[prefKeys[i]] = null;
-          }
-        }
-
-        callback(prefsObj);
-        return;
-      }
-      else if (data.verb === 'set') {
-        for (i in data.obj) {
-          supportString.data = window.JSON.stringify(data.obj[i]);
-          extPrefsBranch.setComplexValue(
-            i,
-            Components.interfaces.nsISupportsString,
-            supportString);
-        }
-
-        if (callback) callback();
-        return;
-      }
-      else if (data.verb === 'clear') {
-        if (typeof(data.obj) === 'string') {
-          data.obj = [data.obj];
-        }
-
-        for (i = 0; i < data.obj.length; i++) {
-          extPrefsBranch.clearUserPref(data.obj[i]);
-        }
-
-        if (callback) return callback();
-        return;
-      }
-    }
-    catch (ex) {
-      // This exception was thrown by the Components.classes stuff above, and
-      // means that this code is being called from a content script.
-      // We need to send a request from this non-privileged context to the
-      // privileged background script.
-      data.action = 'prefs-access';
-      Utils.makeRequestToPrivilegedScript(
-        document,
-        data,
-        callback);
-    }
-  }
-};
-
-
-/*? if(platform!=='mozilla'){ */
-/*
- * When called from the options page, this is effectively a content script, so
- * we'll have to make calls to the background script in that case.
- */
-var SafariOptionsStore = {
-
-  // The options object will be passed to `callback`
-  get: function(callback) {
-    var that = this;
-    this._getPreferences(function(options) {
-      that._fillDefaults(options, callback);
-    });
-  },
-
-  // Store `obj`. `callback` will be called (with no arguments) when complete.
-  set: function(obj, callback) {
-    this._setPreferences(obj, callback);
-  },
-
-  remove: function(arrayOfKeys, callback) {
-    this._removePreferences(arrayOfKeys, callback);
-  },
-
-  _getPreferences: function(callback) {
-    // Only the background script has `safari.extension.settings`.
-    if (typeof(safari.extension.settings) === 'undefined') {
-      // We're going to assume we have Utils and document available here, which
-      // should be the case, since we should be running as a content script.
-      Utils.makeRequestToPrivilegedScript(
-        document,
-        { action: 'get-options' },
-        callback);
-    }
-    else {
-      // Make this actually asynchronous
-      Utils.nextTick(function() {
-        if (callback) callback(safari.extension.settings);
-      });
-    }
-  },
-
-  _setPreferences: function(obj, callback) {
-    // Only the background script has `safari.extension.settings`.
-    if (typeof(safari.extension.settings) === 'undefined') {
-      // We're going to assume we have Utils and document available here, which
-      // should be the case, since we should be running as a content script.
-      Utils.makeRequestToPrivilegedScript(
-        document,
-        { action: 'set-options', options: obj },
-        callback);
-    }
-    else {
-      // Make this actually asynchronous
-      Utils.nextTick(function() {
-        for (var key in obj) {
-          safari.extension.settings[key] = obj[key];
-        }
-
-        if (callback) callback();
-      });
-    }
-  },
-
-  _removePreferences: function(arrayOfKeys, callback) {
-    // Only the background script has `safari.extension.settings`.
-    if (typeof(safari.extension.settings) === 'undefined') {
-      // We're going to assume we have Utils and document available here, which
-      // should be the case, since we should be running as a content script.
-      Utils.makeRequestToPrivilegedScript(
-        document,
-        { action: 'remove-options', arrayOfKeys: arrayOfKeys },
-        callback);
-    }
-    else {
-      // Make this actually asynchronous
-      Utils.nextTick(function() {
-        var i;
-        if (typeof(arrayOfKeys) === 'string') {
-          arrayOfKeys = [arrayOfKeys];
-        }
-
-        for (i = 0; i < arrayOfKeys.length; i++) {
-          delete safari.extension.settings[arrayOfKeys[i]];
-        }
-
-        if (callback) callback();
-      });
-    }
-  },
-
-  // The default values or URLs for our various options.
-  defaults: {
-    'main-css': {'__defaultFromFile__': (typeof(safari) !== 'undefined' ? safari.extension.baseURI : '')+'markdown-here/src/common/default.css', '__mimeType__': 'text/css'},
-    'syntax-css': {'__defaultFromFile__': (typeof(safari) !== 'undefined' ? safari.extension.baseURI : '')+'markdown-here/src/common/highlightjs/styles/github.css', '__mimeType__': 'text/css'},
-    'math-enabled': DEFAULTS['math-enabled'],
-    'math-value': DEFAULTS['math-value'],
-    'hotkey': DEFAULTS['hotkey'],
-    'forgot-to-render-check-enabled': DEFAULTS['forgot-to-render-check-enabled'],
-    'header-anchors-enabled': DEFAULTS['header-anchors-enabled'],
-    'gfm-line-breaks-enabled': DEFAULTS['gfm-line-breaks-enabled']
-  }
-};
-/*? } */
-
-
-/*? if(platform!=='mozilla'){ */
-if (typeof(navigator) !== 'undefined' && navigator.userAgent.indexOf('Chrome') >= 0) {
-  this.OptionsStore = ChromeOptionsStore;
-}
-else if (typeof(navigator) !== 'undefined' && navigator.userAgent.match(/AppleWebKit.*Version.*Safari/)) {
-  this.OptionsStore = SafariOptionsStore;
-}
-else /*? } */ {
-  this.OptionsStore = MozillaOptionsStore;
-}
+// Use ChromeOptionsStore for all WebExtensions platforms
+this.OptionsStore = ChromeOptionsStore;
 
 this.OptionsStore._fillDefaults = function(prefsObj, callback) {
   var that = this;
+
+  // Upgrade the object, if necessary.
+  // Motivation: Our default for the LaTeX renderer used to be Google Charts API. Google
+  // discontinued the service and we switched the default to CodeCogs, but because it was
+  // the default, it will be set in many users' OptionsStore. We need to forcibly replace it.
+  if (typeof prefsObj['math-value'] === 'string' && prefsObj['math-value'].indexOf('chart.googleapis.com') >= 0) {
+    prefsObj['math-value'] = that.defaults['math-value'];
+  }
 
   var key, allKeys = [];
   for (key in that.defaults) {
@@ -525,31 +294,19 @@ this.OptionsStore._fillDefaults = function(prefsObj, callback) {
   }
 
   // This function may be asynchronous (if XHR occurs) or it may be a straight
-  // recursion.
+  // synchronous callback invocation.
   function doDefaultForKey(key, callback) {
     // Only take action if the key doesn't already have a value set.
     if (typeof(prefsObj[key]) === 'undefined') {
       if (that.defaults[key].hasOwnProperty('__defaultFromFile__')) {
-        var xhr = new window.XMLHttpRequest();
-
-        if (that.defaults[key]['__mimeType__']) {
-          xhr.overrideMimeType(that.defaults[key]['__mimeType__']);
-        }
-
-        // Get the default value from the indicated file.
-        xhr.open('GET', that.defaults[key]['__defaultFromFile__']);
-
-        xhr.onreadystatechange = function() {
-          if (this.readyState === this.DONE) {
-            // Assume 200 OK -- it's just a local call
-            prefsObj[key] = this.responseText;
-
+        Utils.getLocalFile(
+          that.defaults[key]['__defaultFromFile__'],
+          that.defaults[key]['__dataType__'] || 'text',
+          function(data) {
+            prefsObj[key] = data;
             callback();
-            return;
-          }
-        };
-
-        xhr.send();
+        });
+        return;
       }
       else {
         // Set the default.
