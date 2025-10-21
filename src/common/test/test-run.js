@@ -1,9 +1,9 @@
 /*
  * Copyright Adam Pritchard 2013
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
-$(function(){
+document.addEventListener('DOMContentLoaded', function() {
   mocha
     // I'm not sure what introduces the global "schemaTypes", but it's not
     // Markdown Here and it causes an error on one of my Chrome instances.

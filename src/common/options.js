@@ -1,30 +1,24 @@
 /*
  * Copyright Adam Pritchard 2015
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 "use strict";
-/*jshint browser:true, jquery:true, sub:true */
-/*global OptionsStore:false, chrome:false, markdownRender:false,
-  htmlToText:false, marked:false, hljs:false, markdownHere:false, Utils:false,
-  MdhHtmlToText:false */
+/* jshint browser:true, sub:true */
+/* global OptionsStore:false, chrome:false, marked:false, markdownHere:false, Utils:false,
+   MdhHtmlToText:false */
 
 /*
  * Main script file for the options page.
  */
 
-var cssEdit, cssSyntaxEdit, cssSyntaxSelect, rawMarkdownIframe, savedMsg,
-    mathEnable, mathEdit, hotkeyShift, hotkeyCtrl, hotkeyAlt, hotkeyKey,
-    forgotToRenderCheckEnabled, headerAnchorsEnabled, gfmLineBreaksEnabled,
-    loaded = false;
+let cssEdit, cssSyntaxEdit, cssSyntaxSelect, rawMarkdownIframe, savedMsg, mathEnable, mathEdit, forgotToRenderCheckEnabled, headerAnchorsEnabled, gfmLineBreaksEnabled;
+let loaded = false;
 
 function onLoad() {
-  var xhr;
+
 
   localize();
-
-  // Show/hide elements depending on platform
-  showPlatformElements();
 
   // Set up our control references.
   cssEdit = document.getElementById('css-edit');
@@ -34,27 +28,51 @@ function onLoad() {
   savedMsg = document.getElementById('saved-msg');
   mathEnable = document.getElementById('math-enable');
   mathEdit = document.getElementById('math-edit');
-  hotkeyShift = document.getElementById('hotkey-shift');
-  hotkeyCtrl = document.getElementById('hotkey-ctrl');
-  hotkeyAlt = document.getElementById('hotkey-alt');
-  hotkeyKey = document.getElementById('hotkey-key');
   forgotToRenderCheckEnabled = document.getElementById('forgot-to-render-check-enabled');
   headerAnchorsEnabled = document.getElementById('header-anchors-enabled');
   gfmLineBreaksEnabled = document.getElementById('gfm-line-breaks-enabled');
+
+  rawMarkdownIframe.addEventListener('load', () => renderMarkdown());
+  rawMarkdownIframe.src = Utils.getLocalURL('/common/options-iframe.html');
+
+  forgotToRenderCheckEnabled.addEventListener('click', handleForgotToRenderChange, false);
+
+  document.getElementById('extensions-shortcut-link').addEventListener('click', function(event) {
+    event.preventDefault();
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  });
+
+  // Update the hotkey/shortcut value
+  chrome.commands.getAll().then(commands => {
+    const shortcut = commands[0].shortcut;
+    if (!shortcut) {
+      // No shortcut set, or a conflict (that we lose)
+      document.querySelector('.hotkey-current-error').style.display = '';
+      document.querySelectorAll('.hotkey-error-hide').forEach(el => el.style.display = 'none');
+    }
+    else {
+      document.querySelectorAll('.hotkey-current').forEach(el => el.textContent = shortcut);
+    }
+  });
+
+  // Listen for runtime messages from the background script
+  chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+    if (request.action === 'button-click') {
+      // Handle button click from background script by toggling markdown
+      markdownToggle();
+    }
+    return false; // Synchronous response
+  });
 
   //
   // Syntax highlighting styles and selection
   //
 
   // Get the available highlight.js styles.
-  xhr = new XMLHttpRequest();
-  xhr.overrideMimeType('application/json');
-  xhr.open('GET', 'highlightjs/styles/styles.json');
-  xhr.onreadystatechange = function() {
-    if (this.readyState === this.DONE) {
-      // Assume 200 OK -- it's just a local call
-      var syntaxStyles = JSON.parse(this.responseText);
-
+  Utils.getLocalFile(
+    Utils.getLocalURL('/common/highlightjs/styles/styles.json'),
+    'json',
+    function(syntaxStyles) {
       for (var name in syntaxStyles) {
         cssSyntaxSelect.options.add(new Option(name, syntaxStyles[name]));
       }
@@ -63,14 +81,13 @@ function onLoad() {
       cssSyntaxSelect.selectedIndex = cssSyntaxSelect.options.length - 1;
 
       cssSyntaxSelect.addEventListener('change', cssSyntaxSelectChange);
-    }
-  };
-  xhr.send();
+    });
 
   //
   // Restore previously set options (asynchronously)
   //
 
+  var optionsGetSuccessful = false;
   OptionsStore.get(function(prefs) {
     cssEdit.value = prefs['main-css'];
     cssSyntaxEdit.value = prefs['syntax-css'];
@@ -78,14 +95,7 @@ function onLoad() {
     mathEnable.checked = prefs['math-enabled'];
     mathEdit.value = prefs['math-value'];
 
-    hotkeyShift.checked = prefs.hotkey.shiftKey;
-    hotkeyCtrl.checked = prefs.hotkey.ctrlKey;
-    hotkeyAlt.checked = prefs.hotkey.altKey;
-    hotkeyKey.value = prefs.hotkey.key;
-
-    hotkeyChangeHandler();
-
-    forgotToRenderCheckEnabled.checked = prefs['forgot-to-render-check-enabled'];
+    forgotToRenderCheckEnabled.checked = prefs['forgot-to-render-check-enabled-2'];
 
     headerAnchorsEnabled.checked = prefs['header-anchors-enabled'];
 
@@ -93,6 +103,8 @@ function onLoad() {
 
     // Start watching for changes to the styles.
     setInterval(checkChange, 100);
+
+    optionsGetSuccessful = true;
   });
 
   // Load the changelist section
@@ -102,97 +114,88 @@ function onLoad() {
 
   // Special effort is required to open the test page in these clients.
   if (navigator.userAgent.indexOf('Thunderbird') >= 0 ||
-      navigator.userAgent.indexOf('Icedove') >= 0 ||
-      navigator.userAgent.indexOf('Postbox') >= 0 ||
       navigator.userAgent.indexOf('Zotero') >= 0) {
-    $('#tests-link').click(function(event) {
+    const testsLink = document.getElementById('tests-link');
+    testsLink.addEventListener('click', function(event) {
       event.preventDefault();
+      const link = testsLink.querySelector('a');
       Utils.makeRequestToPrivilegedScript(
         document,
-        { action: 'open-tab', url: $('#tests-link a').prop('href') });
+        { action: 'open-tab', url: link.href });
     });
   }
 
   // Hide the tests link if the page isn't available. It may be stripped out
   // of extension packages.
 
-  // Check if our test file exists.
-  Utils.getLocalFile('./test/index.html', 'text/html', function(_, err) {
-    // The test files aren't present, so hide the button.
-    if (err) {
+  // Check if our test file exists. Note that we can't use Utils.getLocalFile as it throws
+  // an asynchronous error if the file isn't found.
+  // TODO: When Utils.getLocalFile is changed to return a promise, use it here.
+  fetch('./test/index.html')
+    .then(response => {
+      if (!response.ok) {
+        // The test files aren't present, so hide the button.
+        document.getElementById('tests-link').style.display = 'none';
+      }
+      else {
+        // When the file is absent, Firefox still gives a 200 status, but will throw an
+        // error when the response is read.
+        return response.text();
+      }
+    })
+    .catch(err => {
       // The test files aren't present, so hide the button.
-      $('#tests-link').hide();
+      document.getElementById('tests-link').style.display = 'none';
+    });
+
+  // Older Thunderbird may try to open this options page in a new ChromeWindow, and it
+  // won't work. So in that case we need to tell the user how they can actually open the
+  // options page. This is pretty ungraceful, but few users will encounter it, and fewer as
+  // time goes on.
+  setTimeout(function() {
+    if (!optionsGetSuccessful) {
+      alert('It looks like you are running an older version of Thunderbird.\nOpen the Markdown Here Options via the message window Tools menu.');
+      window.close();
     }
-  });
+  }, 500);
 
   loaded = true;
 }
 document.addEventListener('DOMContentLoaded', onLoad, false);
 
 
-// The Preview <iframe> will let us know when it's loaded, so that we can
-// trigger the rendering of it.
-function previewIframeLoaded() {
-  // Even though the IFrame is loaded, the page DOM might not be, so we don't
-  // yet have a valid state. In that case, set a timer.
-  if (loaded) {
-    renderMarkdown();
-  }
-  else {
-    setTimeout(previewIframeLoaded, 100);
-  }
-}
-document.addEventListener('options-iframe-loaded', previewIframeLoaded);
-
-
 function localize() {
-  Utils.registerStringBundleLoadListener(function localizeHelper() {
-    $('[data-i18n]').each(function() {
-      var messageID = 'options_page__' + $(this).data('i18n');
-      if (this.tagName.toUpperCase() === 'TITLE') {
-        this.innerText = Utils.getMessage(messageID);
-      }
-      else {
-        Utils.saferSetInnerHTML(this, Utils.getMessage(messageID));
-      }
-    });
-
-    // Take this opportunity to show appropriate size images for the pixel
-    // density. This saves us from having to make the `img` tags in the
-    // translated content more complex.
-    // TODO: Change to media queries (and so use background-image style).
-    if (window.devicePixelRatio === 2) {
-      $('img[src="images/icon16.png"]')
-        .css('width', '16px')
-        .attr('src', 'images/icon32.png');
-      $('img[src="images/icon16-button.png"]')
-        .css('width', '16px')
-        .attr('src', 'images/icon32-button.png');
-      $('img[src="images/icon16-monochrome.png"]')
-        .css('width', '16px')
-        .attr('src', 'images/icon32-monochrome.png');
-      $('img[src="images/icon16-button-monochrome.png"]')
-        .css('width', '16px')
-        .attr('src', 'images/icon32-button-monochrome.png');
-      $('img[src="images/icon16-button-disabled.png"]')
-        .css('width', '16px')
-        .attr('src', 'images/icon32-button-disabled.png');
+  const elements = document.querySelectorAll('[data-i18n]');
+  elements.forEach(function(element) {
+    const messageID = 'options_page__' + element.dataset.i18n;
+    if (element.tagName.toUpperCase() === 'TITLE') {
+      element.innerText = Utils.getMessage(messageID);
+    }
+    else {
+      Utils.saferSetInnerHTML(element, Utils.getMessage(messageID));
     }
   });
-}
 
+  // Take this opportunity to show appropriate size images for the pixel
+  // density. This saves us from having to make the `img` tags in the
+  // translated content more complex.
+  // TODO: Change to media queries (and so use background-image style).
+  if (window.devicePixelRatio === 2) {
+    const imageMap = [
+      ['images/icon16.png', 'images/icon32.png'],
+      ['images/icon16-button.png', 'images/icon32-button.png'],
+      ['images/icon16-monochrome.png', 'images/icon32-monochrome.png'],
+      ['images/icon16-button-monochrome.png', 'images/icon32-button-monochrome.png'],
+      ['images/icon16-button-disabled.png', 'images/icon32-button-disabled.png']
+    ];
 
-// Shows/hide page elements depending on the current platform.
-// E.g., not all usage instructions apply to all clients.
-function showPlatformElements() {
-  /*? if(platform!=='mozilla'){ */
-  if (typeof(chrome) !== 'undefined' && typeof(chrome.extension) !== 'undefined') {
-    // Webkit-derived platforms
-    $('#need-page-reload').css('display', 'none');
-  }
-  else /*? } */ {
-    // Mozilla-derived platforms
-    $('#need-page-reload').css('display', '');
+    imageMap.forEach(function([oldSrc, newSrc]) {
+      const imgs = document.querySelectorAll(`img[src="${oldSrc}"]`);
+      imgs.forEach(function(img) {
+        img.style.width = '16px';
+        img.src = newSrc;
+      });
+    });
   }
 }
 
@@ -207,7 +210,6 @@ function checkChange() {
   var newOptions =
         cssEdit.value + cssSyntaxEdit.value +
         mathEnable.checked + mathEdit.value +
-        hotkeyShift.checked + hotkeyCtrl.checked + hotkeyAlt.checked + hotkeyKey.value +
         forgotToRenderCheckEnabled.checked + headerAnchorsEnabled.checked +
         gfmLineBreaksEnabled.checked;
 
@@ -232,13 +234,7 @@ function checkChange() {
           'syntax-css': cssSyntaxEdit.value,
           'math-enabled': mathEnable.checked,
           'math-value': mathEdit.value,
-          'hotkey': {
-                      shiftKey: hotkeyShift.checked,
-                      ctrlKey: hotkeyCtrl.checked,
-                      altKey: hotkeyAlt.checked,
-                      key: hotkeyKey.value
-                    },
-          'forgot-to-render-check-enabled': forgotToRenderCheckEnabled.checked,
+          'forgot-to-render-check-enabled-2': forgotToRenderCheckEnabled.checked,
           'header-anchors-enabled': headerAnchorsEnabled.checked,
           'gfm-line-breaks-enabled': gfmLineBreaksEnabled.checked
         },
@@ -333,16 +329,12 @@ document.querySelector('#markdown-toggle-button').addEventListener('click', mark
 // Reset the main CSS to default.
 function resetCssEdit() {
   // Get the default value.
-  var xhr = new XMLHttpRequest();
-  xhr.overrideMimeType(OptionsStore.defaults['main-css']['__mimeType__']);
-  xhr.open('GET', OptionsStore.defaults['main-css']['__defaultFromFile__']);
-  xhr.onreadystatechange = function() {
-    if (this.readyState === this.DONE) {
-      // Assume 200 OK -- it's just a local call
-      cssEdit.value = this.responseText;
-    }
-  };
-  xhr.send();
+  Utils.getLocalFile(
+    OptionsStore.defaults['main-css']['__defaultFromFile__'],
+    OptionsStore.defaults['main-css']['__dataType__'],
+    function(defaultValue) {
+      cssEdit.value = defaultValue;
+    });
 }
 document.getElementById('reset-button').addEventListener('click', resetCssEdit, false);
 
@@ -361,29 +353,19 @@ function cssSyntaxSelectChange() {
   }
 
   // Get the CSS for the selected theme.
-  var xhr = new XMLHttpRequest();
-  xhr.overrideMimeType('text/css');
-  xhr.open('GET', 'highlightjs/styles/'+selected);
-  xhr.onreadystatechange = function() {
-    if (this.readyState === this.DONE) {
-      // Assume 200 OK -- it's just a local call
-      cssSyntaxEdit.value = this.responseText;
-    }
-  };
-  xhr.send();
+  Utils.getLocalFile(
+    Utils.getLocalURL('/common/highlightjs/styles/'+selected),
+    'text',
+    css => {
+      cssSyntaxEdit.value = css;
+    });
 }
 
 function loadChangelist() {
-  var xhr = new XMLHttpRequest();
-  xhr.overrideMimeType('text/plain');
-
-  // Get the changelist from a local file.
-  xhr.open('GET', 'CHANGES.md');
-  xhr.onreadystatechange = function() {
-    if (this.readyState === this.DONE) {
-      // Assume 200 OK -- it's just a local call
-      var changes = this.responseText;
-
+  Utils.getLocalFile(
+    Utils.getLocalURL('/common/CHANGES.md'),
+    'text',
+    function(changes) {
       var markedOptions = {
             gfm: true,
             pedantic: false,
@@ -391,46 +373,80 @@ function loadChangelist() {
 
       changes = marked(changes, markedOptions);
 
-      Utils.saferSetInnerHTML($('#changelist').get(0), changes);
+      Utils.saferSetInnerHTML(document.getElementById('changelist'), changes);
 
-      var prevVer = location.search ? location.search.match(/prevVer=([0-9\.]+)/) : null;
+      const prevVer = location.search ? location.search.match(/prevVer=([0-9\.]+)/) : null;
       if (prevVer) {
-        prevVer = prevVer[1]; // capture group
+        const version = prevVer[1]; // capture group
 
-        var prevVerStart = $('#changelist h2').filter(function() { return $(this).text().match(new RegExp('v'+prevVer+'$')); });
-        $('#changelist').find('h1:first')
-          .after('<h2>' + Utils.getMessage('new_changelist_items') + '</h2>')
-          .nextUntil(prevVerStart)
-          .wrapAll('<div class="changelist-new"></div>');
+        const changelist = document.getElementById('changelist');
+        const allH2s = changelist.querySelectorAll('h2');
+        let prevVerStart = null;
+
+        for (const h2 of allH2s) {
+          if (h2.textContent.match(new RegExp('v'+version+'$'))) {
+            prevVerStart = h2;
+            break;
+          }
+        }
+
+        const firstH1 = changelist.querySelector('h1:first-child');
+        if (firstH1) {
+          // Create and insert the new h2
+          const newH2 = document.createElement('h2');
+          newH2.textContent = Utils.getMessage('new_changelist_items');
+          firstH1.insertAdjacentElement('afterend', newH2);
+
+          // Collect elements between newH2 and prevVerStart
+          const wrapper = document.createElement('div');
+          wrapper.className = 'changelist-new';
+
+          let current = newH2.nextElementSibling;
+          while (current && current !== prevVerStart) {
+            const next = current.nextElementSibling;
+            wrapper.appendChild(current);
+            current = next;
+          }
+
+          newH2.insertAdjacentElement('afterend', wrapper);
+        }
 
         // Move the changelist section up in the page
-        $('#changelist-container').insertAfter('#pagehead');
+        const changelistContainer = document.getElementById('changelist-container');
+        const pagehead = document.getElementById('pagehead');
+        pagehead.insertAdjacentElement('afterend', changelistContainer);
       }
-    }
-  };
-  xhr.send();
+    });
 }
 
 // Choose one of the donate pleas to use, and update the donate info so we can
 // A/B test them.
 function showDonatePlea() {
-  var $pleas = $('.donate-plea');
-  var choice = Math.floor(Math.random() * $pleas.length);
-  var $plea = $pleas.eq(choice);
-  var pleaId = $plea.attr('id');
-  var submitType = $plea.data('submit-type');
+  const pleas = document.querySelectorAll('.donate-plea');
+  const choice = Math.floor(Math.random() * pleas.length);
+  const plea = pleas[choice];
+  const pleaId = plea.id;
+  const submitType = plea.dataset.submitType;
 
-  if (submitType === 'paypal-submit-image') {
-    $('#paypal-submit-image').show();
-    $('#paypal-submit-css').hide();
-  }
-  else {
-    $('#paypal-submit-image').hide();
-    $('#paypal-submit-css').show();
+  const paypalSubmitImage = document.getElementById('paypal-submit-image');
+  const paypalSubmitCss = document.getElementById('paypal-submit-css');
+
+  if (paypalSubmitImage && paypalSubmitCss) {
+    if (submitType === 'paypal-submit-image') {
+      paypalSubmitImage.style.display = '';
+      paypalSubmitCss.style.display = 'none';
+    }
+    else {
+      paypalSubmitImage.style.display = 'none';
+      paypalSubmitCss.style.display = '';
+    }
   }
 
-  $plea.removeClass('donate-plea-hidden');
-  $('#donate-button input[name="item_number"]').prop('value', 'options-page-'+pleaId);
+  plea.classList.remove('donate-plea-hidden');
+  const itemNumberInput = document.querySelector('#donate-button input[name="item_number"]');
+  if (itemNumberInput) {
+    itemNumberInput.value = 'options-page-' + pleaId;
+  }
 }
 
 // Reset the math img tag template to default.
@@ -439,53 +455,26 @@ function resetMathEdit() {
 }
 document.getElementById('math-reset-button').addEventListener('click', resetMathEdit, false);
 
-// When the user changes the hotkey key, check if it's an alphanumeric value.
-// We only warning and not strictly enforcing because what's considered "alphanumeric"
-// in other languages and/or on other keyboards might be different.
-function hotkeyChangeHandler() {
-  // Check for a valid key value.
-  var regex = new RegExp('^[a-zA-Z0-9]+$');
-  var value = hotkeyKey.value;
-  if (value.length && !regex.test(value)) {
-    $('#hotkey-key-warning').removeClass('hidden');
-  }
-  else {
-    $('#hotkey-key-warning').addClass('hidden');
-  }
+// Handle forgot-to-render checkbox changes
+async function handleForgotToRenderChange(event) {
+  const isThunderbird = navigator.userAgent.indexOf('Thunderbird') !== -1;
+  const origins = isThunderbird
+    ? ['chrome://messenger/content/messengercompose/*'] // TODO: figure out if this is right -- it's probably not an "origin"
+    : ['https://mail.google.com/'];
 
-  // Set any representations of the hotkey to the new value.
-
-  var hotkeyPieces = [];
-  if (hotkeyShift.checked) hotkeyPieces.push(Utils.getMessage('options_page__hotkey_shift_key'));
-  if (hotkeyCtrl.checked) hotkeyPieces.push(Utils.getMessage('options_page__hotkey_ctrl_key'));
-  if (hotkeyAlt.checked) hotkeyPieces.push(Utils.getMessage('options_page__hotkey_alt_key'));
-  if (hotkeyKey.value) hotkeyPieces.push(hotkeyKey.value.toString().toUpperCase());
-
-  $('.hotkey-display').each(function() {
-    var $hotkeyElem = $(this);
-    if (hotkeyKey.value) {
-      if ($hotkeyElem.parent().hasClass('hotkey-display-wrapper')) {
-        $hotkeyElem.parent().css({display: ''});
-      }
-      $hotkeyElem.css({display: ''});
-      $hotkeyElem.empty();
-
-      $.each(hotkeyPieces, function(idx, piece) {
-        if (idx > 0) {
-          $hotkeyElem.append(document.createTextNode(Utils.getMessage('options_page__hotkey_plus')));
-        }
-        $('<kbd>').text(piece).appendTo($hotkeyElem);
-      });
+  if (event.target.checked) {
+    // We're enabling forgot-to-render, so request permissions
+    const granted = await ContentPermissions.requestPermission(origins);
+    if (!granted) {
+      // Permission denied - uncheck the checkbox
+      forgotToRenderCheckEnabled.checked = false;
+      // checkChange will pick up this change and save it
     }
-    else {
-      if ($hotkeyElem.parent().hasClass('hotkey-display-wrapper')) {
-        $hotkeyElem.parent().css({display: 'none'});
-      }
-      $hotkeyElem.css({display: 'none'});
+  } else {
+    // User is disabling forgot-to-render - remove permissions
+    const removed = await ContentPermissions.removePermissions(origins);
+    if (!removed) {
+      console.error('Failed to remove permissions');
     }
-  });
+  }
 }
-document.getElementById('hotkey-key').addEventListener('keyup', hotkeyChangeHandler, false);
-document.getElementById('hotkey-shift').addEventListener('click', hotkeyChangeHandler, false);
-document.getElementById('hotkey-ctrl').addEventListener('click', hotkeyChangeHandler, false);
-document.getElementById('hotkey-alt').addEventListener('click', hotkeyChangeHandler, false);

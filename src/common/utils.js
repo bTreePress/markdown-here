@@ -1,6 +1,6 @@
 /*
  * Copyright Adam Pritchard 2015
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 /*
@@ -12,98 +12,83 @@
 ;(function() {
 
 "use strict";
-/*global module:false, chrome:false, safari:false*/
-
+/*global module:false, chrome:false*/
 
 function consoleLog(logString) {
   if (typeof(console) !== 'undefined') {
     console.log(logString);
-  }
-  else {
-    var consoleService = Components.classes['@mozilla.org/consoleservice;1']
-                                   .getService(Components.interfaces.nsIConsoleService);
-    consoleService.logStringMessage(String(logString));
   }
 }
 
 // TODO: Try to use `insertAdjacentHTML` for the inner and outer HTML functions.
 // https://developer.mozilla.org/en-US/docs/Web/API/Element.insertAdjacentHTML
 
+/**
+ * Safely parse an HTML string into a DocumentFragment without executing scripts.
+ * Uses DOMPurify to sanitize and parse HTML into a DocumentFragment.
+ *
+ * @param {string} htmlString - The HTML string to parse and sanitize.
+ * @param {Document} [ownerDocument] - The document to use for creating the fragment. Defaults to the global document.
+ * @param {boolean} [allowStyleTags] - Whether to allow <style> tags in the sanitized output.
+ * @returns {DocumentFragment} The sanitized DocumentFragment.
+ */
+function safelyParseHTML(htmlString, ownerDocument, allowStyleTags=false) {
+  ownerDocument = ownerDocument || document;
+
+  // DOMPurify is required for security
+  if (typeof DOMPurify === 'undefined') {
+    throw new Error('DOMPurify is required but not loaded. Cannot safely parse HTML.');
+  }
+
+  const domPurifyConfig = {
+    RETURN_DOM_FRAGMENT: true, // Return a DocumentFragment instead of a string
+    DOCUMENT: ownerDocument, // Specify which document to use for creating the fragment
+  };
+  if (allowStyleTags) {
+    domPurifyConfig.ADD_TAGS = ['style']; // Allow <style> tags
+    domPurifyConfig.FORCE_BODY = true; // Ensure <style> tags are processed correctly
+  }
+
+  // Sanitize and parse HTML into a DocumentFragment
+  const docFrag = DOMPurify.sanitize(htmlString, domPurifyConfig);
+
+  return docFrag;
+}
+
 // Assigning a string directly to `element.innerHTML` is potentially dangerous:
 // e.g., the string can contain harmful script elements. (Additionally, Mozilla
 // won't let us pass validation with `innerHTML` assignments in place.)
 // This function provides a safer way to append a HTML string into an element.
-function saferSetInnerHTML(parentElem, htmlString) {
-  // Jump through some hoops to avoid using innerHTML...
+function saferSetInnerHTML(parentElem, htmlString, allowStyleTags=false) {
+  const docFrag = safelyParseHTML(htmlString, parentElem.ownerDocument, allowStyleTags);
 
-  var range = parentElem.ownerDocument.createRange();
+  const range = parentElem.ownerDocument.createRange();
   range.selectNodeContents(parentElem);
-
-  var docFrag = range.createContextualFragment(htmlString);
-  docFrag = sanitizeDocumentFragment(docFrag);
-
   range.deleteContents();
   range.insertNode(docFrag);
   range.detach();
 }
 
 
-// Approximating equivalent to assigning to `outerHTML` -- completely replaces
+// Approximately equivalent to assigning to `outerHTML` -- completely replaces
 // the target element with `htmlString`.
 // Note that some caveats apply that also apply to `outerHTML`:
 // - The element must be in the DOM. Otherwise an exception will be thrown.
 // - The original element has been removed from the DOM, but continues to exist.
 //   Any references to it (such as the one passed into this function) will be
 //   references to the original.
-function saferSetOuterHTML(elem, htmlString) {
-  if (!isElementinDocument(elem)) {
+function saferSetOuterHTML(elem, htmlString, allowStyleTags=false) {
+  if (!isElementInDocument(elem)) {
     throw new Error('Element must be in document');
   }
 
-  var range = elem.ownerDocument.createRange();
+  const docFrag = safelyParseHTML(htmlString, elem.ownerDocument, allowStyleTags);
+
+  const range = elem.ownerDocument.createRange();
   range.selectNode(elem);
-
-  var docFrag = range.createContextualFragment(htmlString);
-  docFrag = sanitizeDocumentFragment(docFrag);
-
   range.deleteContents();
   range.insertNode(docFrag);
   range.detach();
-}
-
-
-// Removes potentially harmful elements and attributes from `docFrag`.
-// Returns a santized copy.
-function sanitizeDocumentFragment(docFrag) {
-  var i;
-
-  // Don't modify the original
-  docFrag = docFrag.cloneNode(true);
-
-  var scriptTagElems = docFrag.querySelectorAll('script');
-  for (i = 0; i < scriptTagElems.length; i++) {
-    scriptTagElems[i].parentNode.removeChild(scriptTagElems[i]);
-  }
-
-  function cleanAttributes(node) {
-    var i;
-
-    if (typeof(node.removeAttribute) === 'undefined') {
-      // We can't operate on this node
-      return;
-    }
-
-    // Remove event handler attributes
-    for (i = node.attributes.length-1; i >= 0; i--) {
-      if (node.attributes[i].name.match(/^on/)) {
-        node.removeAttribute(node.attributes[i].name);
-      }
-    }
-  }
-
-  walkDOM(docFrag.firstChild, cleanAttributes);
-
-  return docFrag;
 }
 
 
@@ -119,9 +104,8 @@ function walkDOM(node, func) {
 }
 
 
-// Next three functions from: http://stackoverflow.com/a/1483487/729729
+// Next three functions from: https://stackoverflow.com/a/1483487/729729
 // Returns true if `node` is in `range`.
-// NOTE: This function is broken in Postbox: https://github.com/adam-p/markdown-here/issues/179
 function rangeIntersectsNode(range, node) {
   var nodeRange;
 
@@ -144,6 +128,7 @@ function rangeIntersectsNode(range, node) {
     nodeRange.selectNodeContents(node);
   }
 
+  // TODO: Remove this workaround, as we no longer support Postbox or XUL Mozilla.
   // Workaround for this old Mozilla bug, which is still present in Postbox:
   // https://bugzilla.mozilla.org/show_bug.cgi?id=665279
   var END_TO_START = node.ownerDocument.defaultView.Range.END_TO_START || window.Range.END_TO_START;
@@ -194,7 +179,7 @@ function getSelectedElementsInRange(range) {
           }
       });
 
-    /*? if(platform!=='mozilla'){ */
+    /*? if(platform!=='firefox'){ */
     /*
     // This code is probably superior, but TreeWalker is not supported by Postbox.
     // If this ends up getting used, it should probably be moved into walkDOM
@@ -219,7 +204,7 @@ function getSelectedElementsInRange(range) {
 }
 
 
-function isElementinDocument(element) {
+function isElementInDocument(element) {
   var doc = element.ownerDocument;
   while (!!(element = element.parentNode)) {
     if (element === doc) {
@@ -230,7 +215,7 @@ function isElementinDocument(element) {
 }
 
 
-// From: http://stackoverflow.com/a/3819589/729729
+// From: https://stackoverflow.com/a/3819589/729729
 // Postbox doesn't support `node.outerHTML`.
 function outerHTML(node, doc) {
   // if IE, Chrome take the internal method otherwise build one
@@ -245,7 +230,7 @@ function outerHTML(node, doc) {
 }
 
 
-// From: http://stackoverflow.com/a/5499821/729729
+// From: https://stackoverflow.com/a/5499821/729729
 var charsToReplace = {
   '&': '&amp;',
   '<': '&lt;',
@@ -298,119 +283,52 @@ function getLocalURL(url) {
     return url;
   }
 
-  /*? if(platform!=='mozilla'){ */
-  if (typeof(chrome) !== 'undefined') {
-    return chrome.extension.getURL(url);
-  }
-  else if (typeof(safari) !== 'undefined') {
-    return safari.extension.baseURI + 'markdown-here/src' + url;
-  }
-  else /*? } */ {
-    // Mozilla platform.
-    // HACK: The proper URL depends on values in `chrome.manifest`. But we "know"
-    // that there are only a couple of locations we request from, so we're going
-    // to branch depending on the presence of "common".
-
-    var COMMON = '/common/';
-    var CONTENT = '/firefox/chrome/';
-
-    if (url.indexOf(COMMON) === 0) {
-      return 'resource://markdown_here_common/' + url.slice(COMMON.length);
-    }
-    else if (url.indexOf(CONTENT) === 0) {
-      return 'chrome://markdown_here/' + url.slice(CONTENT.length);
-    }
-  }
-
-  throw 'unknown url type: ' + url;
+  return chrome.runtime.getURL(url);
 }
 
 
-// Makes an asynchrous XHR request for a local file (basically a thin wrapper).
-// `mimetype` is optional. `callback` will be called with the responseText as
-// argument.
-// If error occurs, `callback`'s second parameter will be an error.
-function getLocalFile(url, mimetype, callback) {
-  if (!callback) {
-    // optional mimetype not provided
-    callback = mimetype;
-    mimetype = null;
-  }
+// Makes an asynchronous XHR request for a local file (basically a thin wrapper).
+// `dataType` must be one of 'text', 'json', or 'base64'.
+// `callback` will be called with the response value, of a type depending on `dataType`.
+// Errors are not expected for local files, and will result in an exception being thrown asynchronously.
+// TODO: Return a promise instead of using a callback. This will allow returning an error
+// properly, and then this can be used in options.js when checking for the existence of
+// the test file.
+function getLocalFile(url, dataType, callback) {
+  fetch(url)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error status: ${response.status}`);
+      }
 
-  var xhr = new window.XMLHttpRequest();
-  if (mimetype) {
-    xhr.overrideMimeType(mimetype);
-  }
-  xhr.open('GET', url);
-
-  xhr.onload = function() {
-    if (callback) {
-     callback(this.responseText);
-     callback = null;
-    }
-  };
-
-  xhr.onerror = function(e) {
-    if (callback) {
-      callback(null, e);
-      callback = null;
-    }
-  };
-
-  try {
-    // On some platforms, xhr.send throws an error if the url is not found.
-    // On some platforms, it will call onerror and on some it won't.
-    xhr.send();
-  }
-  catch(e) {
-    if (callback) {
-      callback(null, e);
-      callback = null;
-      return;
-    }
-  }
-}
-
-
-// Does async XHR request to get data at `url`, then passes it to `callback`
-// Base64-encoded.
-// Intended to be used get the logo image file in a form that can be put in a
-// data-url image element.
-// If error occurs, `callback`'s second parameter will be an error.
-function getLocalFileAsBase64(url, callback) {
-  var xhr = new window.XMLHttpRequest();
-  xhr.open('GET', url);
-  xhr.responseType = 'arraybuffer';
-
-  xhr.onload = function() {
-    var uInt8Array = new Uint8Array(this.response);
-    var base64Data = base64EncArr(uInt8Array);
-
-    if (callback) {
-      callback(base64Data);
-      callback = null;
-    }
-  };
-
-  xhr.onerror = function(e) {
-    if (callback) {
-      callback(null, e);
-      callback = null;
-    }
-  };
-
-  try {
-    // On some platforms, xhr.send throws an error if the url is not found.
-    // On some platforms, it will call onerror and on some it won't.
-    xhr.send();
-  }
-  catch(e) {
-    if (callback) {
-      callback(null, e);
-      callback = null;
-      return;
-    }
-  }
+      switch (dataType) {
+        case 'text':
+          return response.text();
+        case 'json':
+          return response.json();
+        case 'base64':
+          return response.blob();
+        default:
+          throw new Error(`Unknown dataType: ${dataType}`);
+      }
+    })
+    .then(data => {
+      switch (dataType) {
+        case 'text':
+        case 'json':
+          callback(data);
+          break;
+        case 'base64':
+          data.arrayBuffer().then(function(buffer) {
+            var uInt8Array = new Uint8Array(buffer);
+            var base64Data = base64EncArr(uInt8Array);
+            callback(base64Data);
+          });
+      }
+    })
+    .catch(err => {
+        throw new Error(`Error fetching local file: ${url}: ${err}`);
+    });
 }
 
 
@@ -446,89 +364,13 @@ function fireMouseClick(elem) {
 var PRIVILEGED_REQUEST_EVENT_NAME = 'markdown-here-request-event';
 
 function makeRequestToPrivilegedScript(doc, requestObj, callback) {
-  /*? if(platform!=='mozilla'){ */
-  if (typeof(chrome) !== 'undefined') {
-    // If `callback` is undefined and we pass it anyway, Chrome complains with this:
-    // Uncaught Error: Invocation of form extension.sendMessage(object, undefined, null) doesn't match definition extension.sendMessage(optional string extensionId, any message, optional function responseCallback)
-    if (callback) {
-      chrome.extension.sendMessage(requestObj, callback);
-    }
-    else {
-      chrome.extension.sendMessage(requestObj);
-    }
+  // If `callback` is undefined and we pass it anyway, Chrome complains with this:
+  // Uncaught Error: Invocation of form extension.sendMessage(object, undefined, null) doesn't match definition extension.sendMessage(optional string extensionId, any message, optional function responseCallback)
+  if (callback) {
+    chrome.runtime.sendMessage(requestObj, callback);
   }
-  else if (typeof(safari) !== 'undefined') {
-    /*
-    Unlike Chrome, Safari doesn't provide a way to pass a callback to a background-
-    script request. Instead the background script sends a separate message to
-    the content script. We'll keep a set of outstanding callbacks to process as
-    the responses come in.
-    */
-
-    // If this is the first call, do some initialization.
-    if (typeof(makeRequestToPrivilegedScript.requestCallbacks) === 'undefined') {
-      makeRequestToPrivilegedScript.requestCallbacks = {};
-
-      // Handle messages received from the background script.
-      var backgroundMessageHandler = function(event) {
-        // Note that this message handler will get triggered by any request sent
-        // from the background script to the content script for a page, and
-        // it'll get triggered once for each frame in the page. So we need to
-        // make very sure that we should be acting on the message.
-        if (event.name === 'request-response') {
-          var responseObj = window.JSON.parse(event.message);
-
-          if (responseObj.requestID &&
-              makeRequestToPrivilegedScript.requestCallbacks[responseObj.requestID]) {
-            // Call the stored callback.
-            makeRequestToPrivilegedScript.requestCallbacks[responseObj.requestID](responseObj.response);
-            // And remove the stored callback.
-            delete makeRequestToPrivilegedScript.requestCallbacks[responseObj.requestID];
-          }
-        }
-      };
-      safari.self.addEventListener('message', backgroundMessageHandler, false);
-    }
-
-    // Store the callback for later use in the response handler.
-    if (callback) {
-      var reqID = Math.random();
-      makeRequestToPrivilegedScript.requestCallbacks[reqID] = callback;
-      requestObj.requestID = reqID;
-    }
-
-    safari.self.tab.dispatchMessage('request', window.JSON.stringify(requestObj));
-  }
-  else /*? } */ {
-    // See: https://developer.mozilla.org/en-US/docs/Code_snippets/Interaction_between_privileged_and_non-privileged_pages#Chromium-like_messaging.3A_json_request_with_json_callback
-
-    // Make a unique event name to use. (Bad style to modify the input like this...)
-    requestObj.responseEventName = 'markdown-here-response-event-' + Math.floor(Math.random()*1000000);
-
-    var request = doc.createTextNode(JSON.stringify(requestObj));
-
-    var responseHandler = function(event) {
-      var response = null;
-
-      // There may be no response data.
-      if (request.nodeValue) {
-        response = JSON.parse(request.nodeValue);
-      }
-
-      request.parentNode.removeChild(request);
-
-      if (callback) {
-        callback(response);
-      }
-    };
-
-    request.addEventListener(requestObj.responseEventName, responseHandler, false);
-
-    (doc.head || doc.body).appendChild(request);
-
-    var event = doc.createEvent('HTMLEvents');
-    event.initEvent(PRIVILEGED_REQUEST_EVENT_NAME, true, false);
-    request.dispatchEvent(event);
+  else {
+    chrome.runtime.sendMessage(requestObj);
   }
 }
 
@@ -564,7 +406,7 @@ function getTopURL(win, justHostname) {
   var url;
   // We still want a useful value if we're in Thunderbird, etc.
   if (!win.location.href || win.location.href === 'about:blank') {
-    url = win.navigator.userAgent.match(/Thunderbird|Postbox'/);
+    url = win.navigator.userAgent.match(/Thunderbird'/);
     if (url) {
       url = url[0];
     }
@@ -586,22 +428,11 @@ function getTopURL(win, justHostname) {
 // horribly slow rendering. For info see:
 // https://developer.mozilla.org/en-US/docs/Web/API/WindowTimers/setTimeout#Inactive_tabs
 // As an alternative, we can use a local XHR request/response.
-
+// This function just does a simple, local async request and then calls the callback.
 function asyncCallbackXHR(callback) {
-  var xhr = new window.XMLHttpRequest();
-  xhr.open('HEAD', getLocalURL('/common/CHANGES.md'));
-
-  xhr.onload = callback;
-  xhr.onerror = callback;
-
-  try {
-    // On some platforms, xhr.send throws an error if the url is not found.
-    // On some platforms, it will call onerror and on some it won't.
-    xhr.send();
-  }
-  catch(e) {
-    asyncCallbackTimeout(callback);
-  }
+  fetch(getLocalURL('/common/CHANGES.md'), {method: 'HEAD'})
+    .then(callback)
+    .catch(callback);
 }
 
 function asyncCallbackTimeout(callback) {
@@ -637,276 +468,26 @@ function nextTickFn(callback, context) {
   };
 }
 
+// Returns true if the semver version string in a is greater than the one in b.
+// If a or b isn't a version string, a simple string comparison is returned.
+// If a or b is falsy, false is returned.
+// From https://stackoverflow.com/a/55466325
+function semverGreaterThan(a, b) {
+  if (!a || !b) {
+    return false;
+  }
+  return a.localeCompare(b, undefined, { numeric: true }) === 1;
+}
+
 
 /*
  * i18n/l10n
  */
-/*
-This is a much bigger hassle than it should be. i18n support is great on Chrome,
-a bit of a hassle on Firefox/Thunderbird, and basically nonexistent on Safari.
-
-In Chrome, we can use `chrome.i18n.getMessage` to just get the string we want,
-in either content or background scripts, synchronously and with no extra prep
-work.
-
-In Firefox, we need to load the `strings.properties` string bundle for both the
-current locale and English (our fallback language) and combine them. This can
-only be done from a privileged script. Then we can use the strings. The loading
-is synchronous for the privileged script, but asynchronous for the unprivileged
-script (because it needs to make a request to the privileged script).
-
-In Safari, we need to read in the JSON files for the current locale and English
-(our fallback language) and combine them. This can only be done from a privileged
-script. Then we can use the strings. The loading is asynchronous for both
-privileged and unprivileged scripts (because async XHR is used for the former
-and a request is made to the privileged script for the latter).
-
-It can happen that attempts to access the strings are made before the loading
-has actually occurred. This has been observed on Safari in the MDH Options page.
-This necessitated the addition of `registerStringBundleLoadListener` and
-`triggerStringBundleLoadListeners`, which may be used to ensure that `getMessage`
-calls wait until the loading is complete.
-*/
-
-var g_stringBundleLoadListeners = [];
-
-function registerStringBundleLoadListener(callback) {
-  if (/*? if(platform!=='mozilla'){ */
-      typeof(chrome) !== 'undefined' ||
-      (typeof(g_safariStringBundle) === 'object' && Object.keys(g_safariStringBundle).length > 0) ||
-      /*? } */
-      (typeof(g_mozStringBundle) === 'object' && Object.keys(g_mozStringBundle).length > 0)) {
-    // Already loaded
-    Utils.nextTick(callback);
-    return;
-  }
-
-  g_stringBundleLoadListeners.push(callback);
-}
-
-function triggerStringBundleLoadListeners() {
-  var listener;
-  while (g_stringBundleLoadListeners.length > 0) {
-    listener = g_stringBundleLoadListeners.pop();
-    listener();
-  }
-}
-
-
-// Must only be called from a priviledged Mozilla script
-function getMozStringBundle() {
-  if (typeof(Components) === 'undefined' || typeof(Components.classes) === 'undefined') {
-    return false;
-  }
-
-  // Return a cached bundle, if we have one
-  if (typeof(g_mozStringBundle) !== 'undefined' &&
-      Object.keys(g_mozStringBundle).length > 0) {
-    return g_mozStringBundle;
-  }
-
-  // Adapted from: https://developer.mozilla.org/en-US/docs/Code_snippets/Miscellaneous#Using_string_bundles_from_JavaScript
-  // and: https://developer.mozilla.org/en-US/docs/Using_nsISimpleEnumerator
-
-  var stringBundleObj = {}, stringBundle, stringBundleEnum, property;
-
-  // First load the English fallback strings
-
-  stringBundle = window.Components.classes["@mozilla.org/intl/stringbundle;1"]
-                        .getService(Components.interfaces.nsIStringBundleService)
-                        // Notice the explicit locale in this path:
-                        .createBundle("resource://markdown_here_locale/en/strings.properties");
-
-  stringBundleEnum = stringBundle.getSimpleEnumeration();
-  while (stringBundleEnum.hasMoreElements()) {
-    property = stringBundleEnum.getNext().QueryInterface(Components.interfaces.nsIPropertyElement);
-    stringBundleObj[property.key] = property.value;
-  }
-
-  // Then load the strings that are overridden for the current locale
-
-  stringBundle = window.Components.classes["@mozilla.org/intl/stringbundle;1"]
-                        .getService(Components.interfaces.nsIStringBundleService)
-                        .createBundle("chrome://markdown_here/locale/strings.properties");
-
-  stringBundleEnum = stringBundle.getSimpleEnumeration();
-  while (stringBundleEnum.hasMoreElements()) {
-    property = stringBundleEnum.getNext().QueryInterface(Components.interfaces.nsIPropertyElement);
-    stringBundleObj[property.key] = property.value;
-  }
-
-  return stringBundleObj;
-}
-
-// Load the Mozilla string bundle
-/*? if(platform!=='mozilla'){ */
-if (typeof(chrome) === 'undefined' && typeof(safari) === 'undefined') {
-/*? } */
-  var g_mozStringBundle = getMozStringBundle();
-
-  if (!g_mozStringBundle || Object.keys(g_mozStringBundle).length === 0) {
-    window.setTimeout(function requestMozStringBundle() {
-      makeRequestToPrivilegedScript(window.document, {action: 'get-string-bundle'}, function(response) {
-        g_mozStringBundle = response;
-        triggerStringBundleLoadListeners();
-      });
-    }, 0);
-  }
-  else {
-    // g_mozStringBundle is filled in
-    triggerStringBundleLoadListeners();
-  }
-/*? if(platform!=='mozilla'){ */
-}
-/*? } */
-
-
-/*? if(platform!=='mozilla'){ */
-// Will only succeed when called from a privileged Safari script.
-// `callback(data, err)` is passed a non-null value for err in case of total
-// failure, which should be interpreted as being called from a non-privileged
-// (content) script.
-// Otherwise `data` will contain the string bundle object.
-function getSafariStringBundle(callback) {
-
-  // Can't use Utils.functionname in this function, since the exports haven't
-  // been set up at the time it's called.
-
-  var stringBundle = {};
-
-  // Return a cached bundle, if we have one
-  if (typeof(g_safariStringBundle) !== 'undefined' &&
-      Object.keys(g_safariStringBundle).length > 0) {
-    nextTickFn(callback)(g_safariStringBundle);
-    return;
-  }
-
-  // Get the English fallback
-  getStringBundle('en', function(data, err) {
-    if (err) {
-      consoleLog('Error getting English string bundle:');
-      consoleLog(err);
-      return callback(null, err);
-    }
-
-    extendBundle(stringBundle, data);
-
-    var locale = window.navigator.language;
-    if (locale.indexOf('en') === 0) {
-      // The locale is English, nothing more to do
-      return callback(stringBundle, null);
-    }
-
-    // Get the actual locale string bundle
-    getStringBundle(locale, function(data, err) {
-      if (err) {
-        // The locale in navigator.language typically looks like "ja-JP", but
-        // MDH's locale typically looks like "ja".
-        locale = locale.split('-')[0];
-        getStringBundle(locale, function(data, err) {
-          if (err) {
-            // Couldn't find it. We'll just have to use the fallback.
-            consoleLog('Markdown Here has no language support for: ' + locale);
-            return callback(stringBundle);
-          }
-
-          extendBundle(stringBundle, data);
-          return callback(stringBundle);
-        });
-      }
-
-      extendBundle(stringBundle, data);
-      return callback(stringBundle);
-    });
-  });
-
-
-  function getStringBundle(locale, callback) {
-    var url = getLocalURL('/_locales/' + locale + '/messages.json');
-    getLocalFile(url, 'application/json', function(data, err) {
-      if (err) {
-        return callback(null, err);
-      }
-
-      // Chrome's messages.json uses "$" as placeholders and "$$" as an explicit
-      // "$". We're not yet using placeholders, so we'll just convert double to singles.
-      data = data.replace(/\$\$/g, '$');
-
-      return callback(JSON.parse(data));
-    });
-  }
-
-  function extendBundle(intoBundle, fromObj) {
-    var key;
-    for (key in fromObj) {
-      intoBundle[key] = fromObj[key].message;
-    }
-  }
-}
-/*? } */
-
-/*? if(platform!=='mozilla'){ */
-// Load the Safari string bundle
-if (typeof(safari) !== 'undefined') {
-  var g_safariStringBundle = {};
-  // This is effectively checking if we're calling from a privileged script.
-  // We could instead just try getSafariStringBundle() and check the error, but
-  // that's surely less efficient.
-  if (typeof(safari.application) !== 'undefined') {
-    // calling from a privileged script
-    getSafariStringBundle(function(data, err) {
-      if (err) {
-        consoleLog('Markdown Here: privileged script failed to load string bundle: ' + err);
-        return;
-      }
-      g_safariStringBundle = data;
-      triggerStringBundleLoadListeners();
-    });
-  }
-  else {
-    // Call from the privileged script
-    makeRequestToPrivilegedScript(window.document, {action: 'get-string-bundle'}, function(response) {
-      if (response) {
-        g_safariStringBundle = response;
-        triggerStringBundleLoadListeners();
-      }
-      else {
-        consoleLog('Markdown Here: content script failed to get string bundle from privileged script');
-      }
-    });
-  }
-}
-/*? } */
-
-
 // Get the translated string indicated by `messageID`.
 // Note that there's no support for placeholders as yet.
-// Throws exception if message is not found or if the platform doesn't support
-// internationalization (yet).
+// Throws exception if message is not found.
 function getMessage(messageID) {
-  var message = '';
-  /*? if(platform!=='mozilla'){ */
-  if (typeof(chrome) !== 'undefined') {
-    message = chrome.i18n.getMessage(messageID);
-  }
-  else if (typeof(safari) !== 'undefined') {
-    if (g_safariStringBundle) {
-      message = g_safariStringBundle[messageID];
-    }
-    else {
-      // We don't yet have the string bundle available
-      return '';
-    }
-  }
-  else /*? } */ { // Mozilla
-    if (g_mozStringBundle) {
-      message = g_mozStringBundle[messageID];
-    }
-    else {
-      // We don't yet have the string bundle available
-      return '';
-    }
-  }
+  var message = chrome.i18n.getMessage(messageID);
 
   if (!message) {
     throw new Error('Could not find message ID: ' + messageID);
@@ -1102,14 +683,13 @@ var Utils = {};
 
 Utils.saferSetInnerHTML = saferSetInnerHTML;
 Utils.saferSetOuterHTML = saferSetOuterHTML;
+Utils.safelyParseHTML = safelyParseHTML;
 Utils.walkDOM = walkDOM;
-Utils.sanitizeDocumentFragment = sanitizeDocumentFragment;
 Utils.rangeIntersectsNode = rangeIntersectsNode;
 Utils.getDocumentFragmentHTML = getDocumentFragmentHTML;
 Utils.isElementDescendant = isElementDescendant;
 Utils.getLocalURL = getLocalURL;
 Utils.getLocalFile = getLocalFile;
-Utils.getLocalFileAsBase64 = getLocalFileAsBase64;
 Utils.fireMouseClick = fireMouseClick;
 Utils.MARKDOWN_HERE_EVENT = MARKDOWN_HERE_EVENT;
 Utils.makeRequestToPrivilegedScript = makeRequestToPrivilegedScript;
@@ -1119,12 +699,8 @@ Utils.setFocus = setFocus;
 Utils.getTopURL = getTopURL;
 Utils.nextTick = nextTick;
 Utils.nextTickFn = nextTickFn;
-Utils.getMozStringBundle = getMozStringBundle;
-/*? if(platform!=='mozilla'){ */
-Utils.getSafariStringBundle = getSafariStringBundle;
-/*? } */
-Utils.registerStringBundleLoadListener = registerStringBundleLoadListener;
 Utils.getMessage = getMessage;
+Utils.semverGreaterThan = semverGreaterThan;
 Utils.utf8StringToBase64 = utf8StringToBase64;
 Utils.base64ToUTF8String = base64ToUTF8String;
 

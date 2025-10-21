@@ -1,6 +1,6 @@
 /*
  * Copyright Adam Pritchard 2015
- * MIT License : http://adampritchard.mit-license.org/
+ * MIT License : https://adampritchard.mit-license.org/
  */
 
 /*
@@ -38,19 +38,11 @@ https://github.com/adam-p/markdown-here/issues/85
 ;(function() {
 
 "use strict";
-/*global module:false*/
+/* global module:false Utils */
 
 
 var WRAPPER_TITLE_PREFIX = 'MDH:';
 
-
-// In Firefox/Thunderbird, Utils won't already exist.
-if (typeof(Utils) === 'undefined' &&
-    typeof(safari) === 'undefined' && typeof(chrome) === 'undefined') {
-  var scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-                               .getService(Components.interfaces.mozIJSSubScriptLoader);
-  scriptLoader.loadSubScript('resource://markdown_here_common/utils.js');
-}
 
 // For debugging purposes. An external service is required to log with Firefox.
 var mylog = function() {};
@@ -60,17 +52,28 @@ var mylog = function() {};
 function findFocusedElem(document) {
   var focusedElem = document.activeElement;
 
-  // Fix #173: https://github.com/adam-p/markdown-here/issues/173
-  // If the focus is in an iframe with a different origin, then attempting to
-  // access focusedElem.contentDocument will fail with a `SecurityError`:
-  // "Failed to read the 'contentDocument' property from 'HTMLIFrameElement': Blocked a frame with origin "http://jsbin.io" from accessing a cross-origin frame."
-  // Rather than spam the console with exceptions, we'll treat this as an
-  // unrenderable situation (which it is).
-  try {
-    var accessTest = focusedElem.contentDocument;
+  // Tests if it's possible to access the iframe contentDocument without throwing
+  // an exception.
+  function iframeAccessOkay(focusedElem) {
+    // Fix #173: https://github.com/adam-p/markdown-here/issues/173
+    // Fix #435: https://github.com/adam-p/markdown-here/issues/435
+    // If the focus is in an iframe with a different origin, then attempting to
+    // access focusedElem.contentDocument will fail with a `SecurityError`:
+    // "Failed to read the 'contentDocument' property from 'HTMLIFrameElement': Blocked a frame with origin "http://jsbin.io" from accessing a cross-origin frame."
+    // Rather than spam the console with exceptions, we'll treat this as an
+    // unrenderable situation (which it is).
+    try {
+      var _ = focusedElem.contentDocument;
+    }
+    catch (e) {
+      // TODO: Check that this is actually a SecurityError and re-throw if it's not?
+      return false;
+    }
+
+    return true;
   }
-  catch (e) {
-    // TODO: Check that this is actually a SecurityError and re-throw if it's not?
+
+  if (!iframeAccessOkay(focusedElem)) {
     return null;
   }
 
@@ -78,6 +81,10 @@ function findFocusedElem(document) {
   // actual element.
   while (focusedElem && focusedElem.contentDocument) {
     focusedElem = focusedElem.contentDocument.activeElement;
+
+    if (!iframeAccessOkay(focusedElem)) {
+      return null;
+    }
   }
 
   // There's a bug in Firefox/Thunderbird that we need to work around. For
@@ -94,7 +101,7 @@ function findFocusedElem(document) {
 // a rich-edit compose element).
 function elementCanBeRendered(elem) {
   // See here for more info about what we're checking:
-  // http://stackoverflow.com/a/3333679/729729
+  // https://stackoverflow.com/a/3333679/729729
   return (elem.contentEditable === true || elem.contentEditable === 'true' ||
           elem.contenteditable === true || elem.contenteditable === 'true' ||
           (elem.ownerDocument && elem.ownerDocument.designMode === 'on'));
@@ -114,20 +121,15 @@ function getOperationalRange(focusedElem) {
 
   range = selection.getRangeAt(0);
 
-  /*? if(platform!=='mozilla'){ */
-  // We're going to work around some weird OSX+Chrome/Safari behaviour where if you
+  // We're going to work around some weird OSX+Chrome behaviour where if you
   // right-click on a word it gets selected, which then causes us to render just
   // that one word and look dumb and be wrong.
-  // Also, in OSX+Safari, right-clicking in empty space will cause a selection
-  // that isn't collapsed, but has no content. Also ignore that.
   if ((range.toString().length === 0) ||
-      ((typeof(chrome) !== 'undefined' || typeof(safari) !== 'undefined') &&
-       typeof(navigator) !== 'undefined' &&
+      (typeof(navigator) !== 'undefined' &&
        navigator.userAgent.indexOf('OS X') >= 0 &&
        range.toString().match(/^\b\w+\b$/))) {
     range.collapse(true);
   }
-  /*? } */
 
   if (range.collapsed) {
     // If there's no actual selection, select the contents of the focused element.
@@ -192,28 +194,33 @@ function findSignatureStart(startElem) {
   return sig;
 }
 
-// Replaces the contents of `range` with the HTML string in `html`.
-// Returns the element that is created from `html`.
+/**
+ * Replaces the contents of `range` with the HTML string in `html`.
+ * Returns the element that is created from `html`.
+ * @param {Range} range
+ * @param {string} html
+ * @returns {Element}
+ */
 function replaceRange(range, html) {
-  var documentFragment, newElement;
-
   range.deleteContents();
 
   // Create a DocumentFragment to insert and populate it with HTML
-  documentFragment = range.createContextualFragment(html);
-
-  documentFragment = Utils.sanitizeDocumentFragment(documentFragment);
+  const documentFragment = Utils.safelyParseHTML(html, range.startContainer.ownerDocument);
 
   // After inserting the node contents, the node is empty. So we need to save a
   // reference to the element that we need to return.
-  newElement = documentFragment.firstChild;
+  const newElement = documentFragment.firstChild;
 
   range.insertNode(documentFragment);
 
-  // Make sure the replacement is selected. This isn't strictly necessary, but
-  // in order to make Chrome and Firefox consistent, we either need to remove
-  // the selection in Chrome, or set it in Firefox. We'll do the latter.
-  range.selectNode(newElement);
+  // In some clients (and maybe some versions of those clients), on some pages,
+  // the newly inserted rendered Markdown will be selected. It looks better and
+  // is slightly less annoying if the text is not selected, and consistency
+  // across platforms is good. So we're going to collapse the selection.
+  // Note that specifying the `toStart` argument to `true` seems to be necessary
+  // in order to actually get a cursor in the editor.
+  // Fixes #427: https://github.com/adam-p/markdown-here/issues/427
+  range.collapse(true);
 
   return newElement;
 }
@@ -329,7 +336,7 @@ function hasParentElementOfTagName(element, tagName) {
 }
 
 
-// Look for valid raw-MD-holder element under `elem`. Only MDH wrappers will
+// Looks for valid raw-MD-holder element under `elem`. Only MDH wrappers will
 // have such an element.
 // Returns null if no raw-MD-holder element is found; otherwise returns that element.
 function findElemRawHolder(elem) {
@@ -381,8 +388,8 @@ function isWrapperElem(elem) {
 }
 
 
-// Find the wrapper element that's above the current cursor position and returns
-// it. Returns falsy if there is no wrapper.
+// Finds the wrapper element that's above the current cursor position and
+// returns it. Returns falsy if there is no wrapper.
 function findMarkdownHereWrapper(focusedElem) {
   var selection, range, wrapper = null;
 
@@ -406,7 +413,7 @@ function findMarkdownHereWrapper(focusedElem) {
 // Finds all Markdown Here wrappers in the given range. Returns an array of the
 // wrapper elements, or null if no wrappers found.
 function findMarkdownHereWrappersInRange(range) {
-  // Adapted from: http://stackoverflow.com/a/1483487/729729
+  // Adapted from: https://stackoverflow.com/a/1483487/729729
   var containerElement = range.commonAncestorContainer;
   if (containerElement.nodeType != containerElement.ELEMENT_NODE) {
     containerElement = containerElement.parentNode;
@@ -518,7 +525,7 @@ function unrenderMarkdown(wrapperElem) {
   var originalMdHtml = rawHolder.getAttribute('title');
   originalMdHtml = originalMdHtml.slice(WRAPPER_TITLE_PREFIX.length).replace(/\n/g, '');
 
-  // Thunderbird and Postbox break the long title up into multiple lines, which
+  // Thunderbird breaks the long title up into multiple lines, which
   // wrecks our ability to un-base64 it. So strip whitespace.
   originalMdHtml = originalMdHtml.replace(/\s/g, '');
 
